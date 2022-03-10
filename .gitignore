@@ -1,3 +1,10 @@
 /data
 /log
 /rewriter_bl.egg-info
+/*.out
+/*.sh
+/*.txt
+/grid_search.py
+/grid_search_SST.py
+__pycache__/
+*.py[cod]
