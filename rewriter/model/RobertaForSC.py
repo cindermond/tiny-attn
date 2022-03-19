@@ -19,9 +19,6 @@ class RobertaForSC(RobertaPreTrainedModel):
         # Initialize weights and apply final processing
         self.post_init()
 
-    def t(self):
-        print(self.num_labels)
-
     def forward(
         self,
         input_ids=None,

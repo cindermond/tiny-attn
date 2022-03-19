@@ -2,25 +2,8 @@ from transformers.models.roberta.modeling_roberta import RobertaPreTrainedModel,
 import torch
 from transformers.modeling_outputs import BaseModelOutput
 from torch import nn
+from tiny_attn import TinyAttention
 
-class TinyAttention(nn.Module):
-    def __init__(self, input_embd=1024, output_embd=1024, attention_embd=64, attention_head=1, attention_dropout=0.1) -> None:
-        super().__init__()
-        self.attention_embd = attention_embd
-        self.linear1 = nn.Linear(input_embd, attention_embd * 3)
-        self.attention = nn.MultiheadAttention(attention_embd, attention_head, attention_dropout, batch_first= True)
-        self.linear2 = nn.Linear(attention_embd, output_embd)
-        self.norm = nn.LayerNorm(input_embd)
-
-    def forward(self, hidden_states):
-        new_hs = self.norm(hidden_states)
-        new_hs = self.linear1(new_hs)
-        q,k,v = torch.split(new_hs,self.attention_embd, dim=2)
-        new_hs = self.attention(q,k,v)[0]
-        new_hs = self.linear2(new_hs)
-        return hidden_states + new_hs*0.01
-
-    
 
 class RobertaEncoderBL(nn.Module):
     def __init__(self, config, input_embd=1024, output_embd=1024, attention_embd=64, attention_head=1, attention_dropout=0.1):
