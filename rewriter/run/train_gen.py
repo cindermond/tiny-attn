@@ -15,7 +15,7 @@ from torch.optim import AdamW
 from rewriter.model.bart_gen import BartForConditionalGenerationBL
 from rewriter.utils.oom import chunk_batch, search_num_chunks
 
-def train(dataset: str="xsum", lr: float=0.00005, batch_size: int=4, epoch_num: int=20, nhead: int=4, d_hid: int=512, nlayers: int=1, dropout: float=0.1, is_shuffled: bool=True, is_rewriter: bool=True, output_nlayers: int=1, weight_decay: float=0, cache_dir: str='data', seed: int=1234, warmup_steps: int=0, load_name:str = "None", scheduler_type:str = "linear", eval_times:int = 1) -> None:
+def train(dataset: str="xsum", lr: float=0.00005, batch_size: int=2, epoch_num: int=20, nhead: int=4, d_hid: int=512, nlayers: int=1, dropout: float=0.1, is_shuffled: bool=True, is_rewriter: bool=True, output_nlayers: int=1, weight_decay: float=0, cache_dir: str='data', seed: int=1234, warmup_steps: int=0, load_name:str = "None", scheduler_type:str = "linear", eval_times:int = 10000) -> None:
     #reproducibility
     random.seed(seed)
     torch.manual_seed(seed)
@@ -34,7 +34,7 @@ def train(dataset: str="xsum", lr: float=0.00005, batch_size: int=4, epoch_num: 
 
     def preprocess_fn(examples):
         result = tokenizer(examples["document"], padding=True, truncation='longest_first', max_length=(tokenizer.model_max_length), return_tensors='pt')
-        label = tokenizer(examples["summary"], padding=True, truncation='longest_first', max_length=(tokenizer.model_max_length), return_tensors='pt')
+        label = tokenizer(examples["summary"], padding=True, truncation='longest_first', max_length=(tokenizer.model_max_length), return_tensors='pt')["input_ids"]
         return result, label
 
     metric = load_metric("rouge")
@@ -42,7 +42,11 @@ def train(dataset: str="xsum", lr: float=0.00005, batch_size: int=4, epoch_num: 
     # predictions and label_ids field) and has to return a dictionary string to float.
     def metric_fn(preds, labels):
         result = metric.compute(predictions=preds, references=labels)
-        score = result["rouge2"].mid.fmeasure
+        result["rouge1"]=result["rouge1"].mid.fmeasure
+        result["rouge2"]=result["rouge2"].mid.fmeasure
+        result["rougeL"]=result["rougeL"].mid.fmeasure
+        del result["rougeLsum"]
+        score = result["rouge2"]
         return score, result
 
     start_epoch = 0
@@ -81,8 +85,7 @@ def train(dataset: str="xsum", lr: float=0.00005, batch_size: int=4, epoch_num: 
         last_cp = torch.load(os.path.abspath(f'log/weight/opt-last-{save_name}.pt'))
         optimizer.load_state_dict(last_cp['state_dict'])
     # chunk dataset for oom errors
-    num_chunks = search_num_chunks(model, preprocess_fn, trainloader.dataset, batch_size)
-    print('num chunks to chunk batches into is: ', num_chunks)
+    num_chunks = 1
     if scheduler_type=="linear":
         scheduler = get_linear_schedule_with_warmup(optimizer,num_warmup_steps=warmup_steps,num_training_steps=len(trainloader)*epoch_num,last_epoch = start_epoch-1)
     elif scheduler_type=="constant":
@@ -102,6 +105,7 @@ def train(dataset: str="xsum", lr: float=0.00005, batch_size: int=4, epoch_num: 
     total_loss = 0
     log_interval = 1000
     eval_interval = math.floor(len(trainloader)/eval_times)
+
     for epoch in range(start_epoch, epoch_num):
         for index, batch in enumerate(trainloader):
             inputs, label = preprocess_fn(batch)
@@ -147,12 +151,14 @@ def train(dataset: str="xsum", lr: float=0.00005, batch_size: int=4, epoch_num: 
 @torch.no_grad()
 def eval(model: nn.Module, preprocess_fn, dataloader: torch.utils.data.DataLoader, metric_fn) -> float:
     #initialize
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
     model.eval()
     total_metric = 0
     total_metrics = defaultdict(lambda: 0)
-    log_interval = 200
+    log_interval = 10
     for index, batch in enumerate(dataloader):
         inputs, label = preprocess_fn(batch)
+        inputs.to(device)
         output = model.generate(inputs['input_ids'], attention_mask=inputs['attention_mask'], num_beams=5, max_new_tokens=100)
         score, result = metric_fn(output, label)
         total_metric += score

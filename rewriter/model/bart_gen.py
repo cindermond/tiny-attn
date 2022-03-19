@@ -248,9 +248,10 @@ class BartDecoderBL(BartPretrainedModel):
             config.max_position_embeddings,
             config.d_model,
         )
+        embed_dim = config.d_model
         self.layers = nn.ModuleList([BartDecoderLayer(config) if i%2==1 else BartTinyAttention(input_embd=embed_dim, output_embd=embed_dim, attention_embd=64, attention_head=1, attention_dropout=0.1) for i in range(2*(config.decoder_layers+output_nlayers))])
         self.layernorm_embedding = nn.LayerNorm(config.d_model)
-        embed_dim = config.d_model
+        
 
         self.gradient_checkpointing = False
         # Initialize weights and apply final processing
@@ -469,7 +470,7 @@ class BartModelBL(BartPretrainedModel):
         padding_idx, vocab_size = config.pad_token_id, config.vocab_size
         self.shared = nn.Embedding(vocab_size, config.d_model, padding_idx)
 
-        self.encoder = BartEncoderBL(config, self.shared, is_writer=is_rewriter,rewriter_nhead=rewriter_nhead,rewriter_d_hid=rewriter_d_hid,rewriter_dropout=rewriter_dropout,rewriter_nlayers=rewriter_nlayers)
+        self.encoder = BartEncoderBL(config, self.shared, is_rewriter=is_rewriter,rewriter_nhead=rewriter_nhead,rewriter_d_hid=rewriter_d_hid,rewriter_dropout=rewriter_dropout,rewriter_nlayers=rewriter_nlayers)
         self.decoder = BartDecoderBL(config, self.shared, output_nlayers=output_nlayers)
 
         # Initialize weights and apply final processing
