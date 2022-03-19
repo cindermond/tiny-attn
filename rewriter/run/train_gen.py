@@ -15,7 +15,7 @@ from torch.optim import AdamW
 from rewriter.model.bart_gen import BartForConditionalGenerationBL
 from rewriter.utils.oom import chunk_batch, search_num_chunks
 
-def train(dataset: str="xsum", lr: float=0.00005, batch_size: int=8, epoch_num: int=20, nhead: int=4, d_hid: int=512, nlayers: int=1, dropout: float=0.1, is_shuffled: bool=True, is_rewriter: bool=True, output_nlayers: int=1, weight_decay: float=0, cache_dir: str='data', seed: int=1234, warmup_steps: int=0, load_name:str = "None", scheduler_type:str = "linear", eval_times:int = 1) -> None:
+def train(dataset: str="xsum", lr: float=0.00005, batch_size: int=4, epoch_num: int=20, nhead: int=4, d_hid: int=512, nlayers: int=1, dropout: float=0.1, is_shuffled: bool=True, is_rewriter: bool=True, output_nlayers: int=1, weight_decay: float=0, cache_dir: str='data', seed: int=1234, warmup_steps: int=0, load_name:str = "None", scheduler_type:str = "linear", eval_times:int = 1) -> None:
     #reproducibility
     random.seed(seed)
     torch.manual_seed(seed)
@@ -68,8 +68,12 @@ def train(dataset: str="xsum", lr: float=0.00005, batch_size: int=8, epoch_num: 
         p.requires_grad = False
     for p in model.model.encoder.layers.parameters():
         p.requires_grad = False
-    for p in model.model.decoder.layers[1::2].parameters():
-        p.requires_grad = False
+    if output_nlayers == 0:
+        for p in model.model.decoder.layers[1::2].parameters():
+            p.requires_grad = False
+    else:
+        for p in model.model.decoder.layers[1:-(2*output_nlayers-1):2].parameters():
+            p.requires_grad = False
 
     model = model.to(device)
     optimizer = AdamW(filter(lambda p: p.requires_grad, model.parameters()),lr=lr,weight_decay=weight_decay)
@@ -91,9 +95,12 @@ def train(dataset: str="xsum", lr: float=0.00005, batch_size: int=8, epoch_num: 
     model.train()
     model.model.encoder.layers.eval()
     model.model.shared.eval()
-    model.model.decoder.layers[1::2].eval()
+    if output_nlayers == 0:
+        model.model.decoder.layers[1::2].eval()
+    else:
+        model.model.decoder.layers[1:-(2*output_nlayers-1):2].eval()
     total_loss = 0
-    log_interval = 100
+    log_interval = 1000
     eval_interval = math.floor(len(trainloader)/eval_times)
     for epoch in range(start_epoch, epoch_num):
         for index, batch in enumerate(trainloader):
@@ -118,7 +125,7 @@ def train(dataset: str="xsum", lr: float=0.00005, batch_size: int=8, epoch_num: 
                 total_loss = 0
             
             if index % eval_interval == eval_interval - 1:
-                dev_metric, dev_metrics = eval(model, preprocess_fn, devloader, metric_fn, dataset)
+                dev_metric, dev_metrics = eval(model, preprocess_fn, devloader, metric_fn)
                 print(f'Epoch{epoch+1} dev_metrics: {dev_metrics}')
 
                 if dev_metric > max_dev_metric:
@@ -128,28 +135,26 @@ def train(dataset: str="xsum", lr: float=0.00005, batch_size: int=8, epoch_num: 
                 model.train()
                 model.model.encoder.layers.eval()
                 model.model.shared.eval()
-                model.model.decoder.layers[1::2].eval()
+                if output_nlayers == 0:
+                    model.model.decoder.layers[1::2].eval()
+                else:
+                    model.model.decoder.layers[1:-(2*output_nlayers-1):2].eval()
 
         torch.save(make_cp(model, epoch) ,os.path.abspath(f'log/weight/weight-last-{save_name}.pt'))
         torch.save(make_cp(optimizer, epoch) ,os.path.abspath(f'log/weight/opt-last-{save_name}.pt'))
 
     
 @torch.no_grad()
-def eval(model: nn.Module, preprocess_fn, dataloader: torch.utils.data.DataLoader, metric_fn, dataset) -> float:
+def eval(model: nn.Module, preprocess_fn, dataloader: torch.utils.data.DataLoader, metric_fn) -> float:
     #initialize
     model.eval()
-    device = next(model.parameters()).device
     total_metric = 0
     total_metrics = defaultdict(lambda: 0)
     log_interval = 200
     for index, batch in enumerate(dataloader):
-        inputs = preprocess_fn(batch)
-        if batch['label'].dtype == torch.double: batch['label'] = batch['label'].float() # for stsb
-        inputs.update({'labels': batch['label']})
-        inputs.to(device)
-        output = model(inputs['input_ids'], inputs['attention_mask'], labels=inputs['labels'])
-        _, pos = torch.max(output.logits, 1)
-        score, result = metric_fn(pos, inputs['labels'])
+        inputs, label = preprocess_fn(batch)
+        output = model.generate(inputs['input_ids'], attention_mask=inputs['attention_mask'], num_beams=5, max_new_tokens=100)
+        score, result = metric_fn(output, label)
         total_metric += score
         for k in result:
             total_metrics[k] += result[k]

@@ -5,7 +5,7 @@ import math
 from transformers.modeling_outputs import Seq2SeqLMOutput, Seq2SeqModelOutput, BaseModelOutput, BaseModelOutputWithPastAndCrossAttentions
 from transformers.models.bart.modeling_bart import BartPretrainedModel, BartConfig, Optional, BartDecoderLayer, BartEncoderLayer, BartLearnedPositionalEmbedding
 import random
-from tiny_attn import TinyAttention, BartTinyAttention
+from rewriter.model.tiny_attn import TinyAttention, BartTinyAttention
 
 def _make_causal_mask(input_ids_shape: torch.Size, dtype: torch.dtype, past_key_values_length: int = 0):
     """
@@ -60,7 +60,7 @@ class BartEncoderBL(BartPretrainedModel):
         embed_tokens (nn.Embedding): output embedding
     """
 
-    def __init__(self, config: BartConfig, embed_tokens: Optional[nn.Embedding] = None):
+    def __init__(self, config: BartConfig, embed_tokens: Optional[nn.Embedding] = None, is_rewriter=True, rewriter_nhead=4, rewriter_d_hid=512, rewriter_dropout=0.1, rewriter_nlayers=1):
         super().__init__(config)
 
         self.dropout = config.dropout
@@ -83,6 +83,11 @@ class BartEncoderBL(BartPretrainedModel):
         self.layers = nn.ModuleList([BartEncoderLayer(config) for _ in range(config.encoder_layers)])
         self.layernorm_embedding = nn.LayerNorm(embed_dim)
         self.attention_layer = nn.ModuleList([TinyAttention(input_embd=embed_dim, output_embd=embed_dim, attention_embd=64, attention_head=1, attention_dropout=0.1) for _ in range(config.encoder_layers)])
+
+        self.is_rewriter = is_rewriter
+        if is_rewriter:
+            self.first_dropout = torch.nn.Dropout(0.1)
+            self.rewriter = self.rewriter = nn.TransformerEncoder(nn.TransformerEncoderLayer(1024, rewriter_nhead, rewriter_d_hid, rewriter_dropout, batch_first=True), rewriter_nlayers)
 
         self.gradient_checkpointing = False
         # Initialize weights and apply final processing
@@ -181,6 +186,11 @@ class BartEncoderBL(BartPretrainedModel):
                     f"The head_mask should be specified for {len(self.layers)} layers, but it is for {head_mask.size()[0]}."
                 )
 
+        if self.is_rewriter:
+            hidden_states = self.first_dropout(hidden_states)
+            hidden_states = self.rewriter(hidden_states)
+
+
         for idx, (attn_layer, encoder_layer) in enumerate(zip(self.attention_layer,self.layers)):
             if output_hidden_states:
                 encoder_states = encoder_states + (hidden_states,)
@@ -221,7 +231,7 @@ class BartDecoderBL(BartPretrainedModel):
         embed_tokens (nn.Embedding): output embedding
     """
 
-    def __init__(self, config: BartConfig, embed_tokens: Optional[nn.Embedding] = None):
+    def __init__(self, config: BartConfig, embed_tokens: Optional[nn.Embedding] = None, output_nlayers=1):
         super().__init__(config)
         self.dropout = config.dropout
         self.layerdrop = config.decoder_layerdrop
@@ -238,10 +248,9 @@ class BartDecoderBL(BartPretrainedModel):
             config.max_position_embeddings,
             config.d_model,
         )
-        self.layers = nn.ModuleList([BartDecoderLayer(config) if i%2==1 else BartTinyAttention(input_embd=embed_dim, output_embd=embed_dim, attention_embd=64, attention_head=1, attention_dropout=0.1) for i in range(2*config.decoder_layers)])
+        self.layers = nn.ModuleList([BartDecoderLayer(config) if i%2==1 else BartTinyAttention(input_embd=embed_dim, output_embd=embed_dim, attention_embd=64, attention_head=1, attention_dropout=0.1) for i in range(2*(config.decoder_layers+output_nlayers))])
         self.layernorm_embedding = nn.LayerNorm(config.d_model)
         embed_dim = config.d_model
-
 
         self.gradient_checkpointing = False
         # Initialize weights and apply final processing
@@ -454,14 +463,14 @@ class BartDecoderBL(BartPretrainedModel):
 
 
 class BartModelBL(BartPretrainedModel):
-    def __init__(self, config: BartConfig):
+    def __init__(self, config: BartConfig, output_nlayers=1, is_rewriter=True, rewriter_nhead=4, rewriter_d_hid=512, rewriter_dropout=0.1, rewriter_nlayers=1):
         super().__init__(config)
 
         padding_idx, vocab_size = config.pad_token_id, config.vocab_size
         self.shared = nn.Embedding(vocab_size, config.d_model, padding_idx)
 
-        self.encoder = BartEncoderBL(config, self.shared)
-        self.decoder = BartDecoderBL(config, self.shared)
+        self.encoder = BartEncoderBL(config, self.shared, is_writer=is_rewriter,rewriter_nhead=rewriter_nhead,rewriter_d_hid=rewriter_d_hid,rewriter_dropout=rewriter_dropout,rewriter_nlayers=rewriter_nlayers)
+        self.decoder = BartDecoderBL(config, self.shared, output_nlayers=output_nlayers)
 
         # Initialize weights and apply final processing
         self.post_init()
@@ -574,9 +583,9 @@ class BartForConditionalGenerationBL(BartPretrainedModel):
     base_model_prefix = "model"
     _keys_to_ignore_on_load_missing = [r"final_logits_bias", r"lm_head\.weight"]
 
-    def __init__(self, config: BartConfig):
+    def __init__(self, config: BartConfig, output_nlayers=1, is_rewriter=True, rewriter_nhead=4, rewriter_d_hid=512, rewriter_dropout=0.1, rewriter_nlayers=1):
         super().__init__(config)
-        self.model = BartModelBL(config)
+        self.model = BartModelBL(config, output_nlayers=output_nlayers, is_rewriter=is_rewriter, rewriter_nhead=rewriter_nhead, rewriter_d_hid=rewriter_d_hid, rewriter_dropout=rewriter_dropout, rewriter_nlayers=rewriter_nlayers)
         self.register_buffer("final_logits_bias", torch.zeros((1, self.model.shared.num_embeddings)))
         self.lm_head = nn.Linear(config.d_model, self.model.shared.num_embeddings, bias=False)
 
