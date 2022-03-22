@@ -149,26 +149,21 @@ def train(dataset: str="xsum", lr: float=0.00005, batch_size: int=2, epoch_num: 
 
     
 @torch.no_grad()
-def eval(model: nn.Module, preprocess_fn, dataloader: torch.utils.data.DataLoader, metric_fn) -> float:
+def eval(model: nn.Module, preprocess_fn, dataloader: torch.utils.data.DataLoader, metric) -> float:
     #initialize
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     model.eval()
-    total_metric = 0
-    total_metrics = defaultdict(lambda: 0)
-    log_interval = 10
-    for index, batch in enumerate(dataloader):
+    for batch in dataloader:
         inputs, label = preprocess_fn(batch)
         inputs.to(device)
         output = model.generate(inputs['input_ids'], attention_mask=inputs['attention_mask'], num_beams=5, max_new_tokens=100)
-        score, result = metric_fn(output, label)
-        total_metric += score
-        for k in result:
-            total_metrics[k] += result[k]
-        if index % log_interval == log_interval - 1:
-            print(f'Eval Progress: {index+1}/{len(dataloader)}')
-    total_metric /= len(dataloader)
-    total_metrics = {k: v / len(dataloader) for k, v in total_metrics.items()}
-    return total_metric, total_metrics
+        metric.add_batch(predictions=output, references=label)
+    result = metric.compute()
+    result["rouge1"]=result["rouge1"].mid.fmeasure
+    result["rouge2"]=result["rouge2"].mid.fmeasure
+    result["rougeL"]=result["rougeL"].mid.fmeasure
+    del result["rougeLsum"]
+    return result["rouge2"], result
 
 if __name__=='__main__':
     if len(sys.argv) > 1:

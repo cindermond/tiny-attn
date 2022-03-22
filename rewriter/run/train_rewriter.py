@@ -53,7 +53,7 @@ def train(dataset: str="sst2", lr: float=0.00005, batch_size: int=8, epoch_num: 
         val_word = 'validation_matched'
     else:
         val_word = 'validation'
-    devloader = torch.utils.data.DataLoader(raw_datasets[val_word], batch_size=batch_size, shuffle=is_shuffled)
+    devloader = torch.utils.data.DataLoader(raw_datasets[val_word], batch_size=batch_size, shuffle=False)
 
     sentence1_key, sentence2_key = task_to_keys[dataset]
     def preprocess_fn(examples):
@@ -66,13 +66,6 @@ def train(dataset: str="sst2", lr: float=0.00005, batch_size: int=8, epoch_num: 
     metric = load_metric("glue", dataset)
     # You can define your custom compute_metrics function. It takes an `EvalPrediction` object (a namedtuple with a
     # predictions and label_ids field) and has to return a dictionary string to float.
-    def metric_fn(preds, labels):
-        result = metric.compute(predictions=preds, references=labels)
-        if 'f1' in result.keys():
-            score = list(result.values())[1]
-        else:
-            score = list(result.values())[0]
-        return score, result
 
     start_epoch = 0
     max_dev_metric = -float('inf')
@@ -147,7 +140,7 @@ def train(dataset: str="sst2", lr: float=0.00005, batch_size: int=8, epoch_num: 
                 total_loss = 0
             
             if index % eval_interval == eval_interval - 1:
-                dev_metric, dev_metrics = eval(model, preprocess_fn, devloader, metric_fn, dataset)
+                dev_metric, dev_metrics = eval(model, preprocess_fn, devloader, metric, dataset)
                 print(f'Epoch{epoch+1} dev_metrics: {dev_metrics}')
 
                 if dev_metric > max_dev_metric:
@@ -161,34 +154,25 @@ def train(dataset: str="sst2", lr: float=0.00005, batch_size: int=8, epoch_num: 
         torch.save(make_cp(model, epoch) ,os.path.abspath(f'log/weight/weight-last-{save_name}.pt'))
         torch.save(make_cp(optimizer, epoch) ,os.path.abspath(f'log/weight/opt-last-{save_name}.pt'))
 
-    
+
 @torch.no_grad()
-def eval(model: nn.Module, preprocess_fn, dataloader: torch.utils.data.DataLoader, metric_fn, dataset) -> float:
+def eval(model: nn.Module, preprocess_fn, dataloader: torch.utils.data.DataLoader, metric, dataset) -> float:
     #initialize
     model.eval()
     device = next(model.parameters()).device
-    total_metric = 0
-    total_metrics = defaultdict(lambda: 0)
-    log_interval = 200
-    for index, batch in enumerate(dataloader):
+    for batch in dataloader:
         inputs = preprocess_fn(batch)
         if batch['label'].dtype == torch.double: batch['label'] = batch['label'].float() # for stsb
         inputs.update({'labels': batch['label']})
         inputs.to(device)
         output = model(inputs['input_ids'], inputs['attention_mask'], labels=inputs['labels'])
         if dataset != "stsb":
-            max_next_token_logits, pos = torch.max(output.logits, 1)
+            _, pos = torch.max(output.logits, 1)
         else:
             pos = output.logits
-        score, result = metric_fn(pos, inputs['labels'])
-        total_metric += score
-        for k in result:
-            total_metrics[k] += result[k]
-        if index % log_interval == log_interval - 1:
-            print(f'Eval Progress: {index+1}/{len(dataloader)}')
-    total_metric /= len(dataloader)
-    total_metrics = {k: v / len(dataloader) for k, v in total_metrics.items()}
-    return total_metric, total_metrics
+        metric.add_batch(predictions=pos, references=inputs['labels'])
+    result = metric.compute()
+    return list(result.values())[0], result
 
 if __name__=='__main__':
     if len(sys.argv) > 1:
