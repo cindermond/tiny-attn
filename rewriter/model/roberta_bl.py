@@ -2,7 +2,7 @@ from transformers.models.roberta.modeling_roberta import RobertaPreTrainedModel,
 import torch
 from transformers.modeling_outputs import BaseModelOutput
 from torch import nn
-from tiny_attn import TinyAttention
+from rewriter.model.tiny_attn import TinyAttention
 
 
 class RobertaEncoderBL(nn.Module):

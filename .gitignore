@@ -6,6 +6,7 @@
 /*.txt
 /grid_search.py
 /grid_search_SST.py
+/grid_search_gen.py
 /best_from_logs.py
 __pycache__/
 *.pyc
