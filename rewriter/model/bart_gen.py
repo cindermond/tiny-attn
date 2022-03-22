@@ -653,6 +653,7 @@ class BartForConditionalGenerationBL(BartPretrainedModel):
                 decoder_input_ids = shift_tokens_right(
                     labels, self.config.pad_token_id, self.config.decoder_start_token_id
                 )
+            labels.masked_fill_(labels == self.config.pad_token_id, -100)
 
         outputs = self.model(
             input_ids,

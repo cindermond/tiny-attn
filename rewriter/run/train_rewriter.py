@@ -1,6 +1,5 @@
-from collections import defaultdict
 from datasets import load_dataset, load_metric
-from transformers import AutoTokenizer, AutoConfig
+from transformers import AutoTokenizer
 from transformers.optimization import get_linear_schedule_with_warmup, get_constant_schedule_with_warmup,get_cosine_schedule_with_warmup
 import torch
 import os.path

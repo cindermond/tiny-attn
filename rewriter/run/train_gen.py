@@ -1,6 +1,5 @@
-from collections import defaultdict
 from datasets import load_dataset, load_metric
-from transformers import AutoTokenizer, AutoConfig
+from transformers import AutoTokenizer
 from transformers.optimization import get_linear_schedule_with_warmup, get_constant_schedule_with_warmup,get_cosine_schedule_with_warmup
 import torch
 import os.path
@@ -10,10 +9,12 @@ import sys
 import ast
 import random
 import math
+import nltk
 from torch.optim import AdamW
 
 from rewriter.model.bart_gen import BartForConditionalGenerationBL
-from rewriter.utils.oom import chunk_batch, search_num_chunks
+from rewriter.utils.oom import chunk_batch
+
 
 def train(dataset: str="xsum", lr: float=0.00005, batch_size: int=2, epoch_num: int=20, nhead: int=4, d_hid: int=512, nlayers: int=1, dropout: float=0.1, is_shuffled: bool=True, is_rewriter: bool=True, output_nlayers: int=1, weight_decay: float=0, cache_dir: str='data', seed: int=1234, warmup_steps: int=0, load_name:str = "None", scheduler_type:str = "linear", eval_times:int = 10000) -> None:
     #reproducibility
@@ -31,6 +32,7 @@ def train(dataset: str="xsum", lr: float=0.00005, batch_size: int=2, epoch_num: 
     raw_datasets = load_dataset(dataset, cache_dir=cache_dir)
     trainloader = torch.utils.data.DataLoader(raw_datasets['train'], batch_size=batch_size, shuffle=is_shuffled)
     devloader = torch.utils.data.DataLoader(raw_datasets['validation'], batch_size=batch_size, shuffle=False)
+    devloader = devloader.select(range(1600))
 
     def preprocess_fn(examples):
         result = tokenizer(examples["document"], padding=True, truncation='longest_first', max_length=(tokenizer.model_max_length), return_tensors='pt')
@@ -40,14 +42,6 @@ def train(dataset: str="xsum", lr: float=0.00005, batch_size: int=2, epoch_num: 
     metric = load_metric("rouge")
     # You can define your custom compute_metrics function. It takes an `EvalPrediction` object (a namedtuple with a
     # predictions and label_ids field) and has to return a dictionary string to float.
-    def metric_fn(preds, labels):
-        result = metric.compute(predictions=preds, references=labels)
-        result["rouge1"]=result["rouge1"].mid.fmeasure
-        result["rouge2"]=result["rouge2"].mid.fmeasure
-        result["rougeL"]=result["rougeL"].mid.fmeasure
-        del result["rougeLsum"]
-        score = result["rouge2"]
-        return score, result
 
     start_epoch = 0
     max_dev_metric = -float('inf')
@@ -129,7 +123,7 @@ def train(dataset: str="xsum", lr: float=0.00005, batch_size: int=2, epoch_num: 
                 total_loss = 0
             
             if index % eval_interval == eval_interval - 1:
-                dev_metric, dev_metrics = eval(model, preprocess_fn, devloader, metric_fn)
+                dev_metric, dev_metrics = eval(model, preprocess_fn, devloader, metric, tokenizer)
                 print(f'Epoch{epoch+1} dev_metrics: {dev_metrics}')
 
                 if dev_metric > max_dev_metric:
@@ -149,20 +143,28 @@ def train(dataset: str="xsum", lr: float=0.00005, batch_size: int=2, epoch_num: 
 
     
 @torch.no_grad()
-def eval(model: nn.Module, preprocess_fn, dataloader: torch.utils.data.DataLoader, metric) -> float:
+def eval(model: nn.Module, preprocess_fn, dataloader: torch.utils.data.DataLoader, metric, tokenizer) -> float:
     #initialize
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     model.eval()
     for batch in dataloader:
-        inputs, label = preprocess_fn(batch)
+        inputs, labels = preprocess_fn(batch)
         inputs.to(device)
-        output = model.generate(inputs['input_ids'], attention_mask=inputs['attention_mask'], num_beams=5, max_new_tokens=100)
-        metric.add_batch(predictions=output, references=label)
+        preds = model.generate(inputs['input_ids'], attention_mask=inputs['attention_mask'], num_beams=6, max_length=60, min_length=10).sequences
+        
+        preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
+        labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
+
+        preds = [pred.strip() for pred in preds]
+        labels = [label.strip() for label in labels]
+
+        # rougeLSum expects newline after each sentence
+        preds = ["\n".join(nltk.sent_tokenize(pred)) for pred in preds]
+        labels = ["\n".join(nltk.sent_tokenize(label)) for label in labels]
+        
+        metric.add_batch(predictions=preds, references=labels, use_stemmer = True)
     result = metric.compute()
-    result["rouge1"]=result["rouge1"].mid.fmeasure
-    result["rouge2"]=result["rouge2"].mid.fmeasure
-    result["rougeL"]=result["rougeL"].mid.fmeasure
-    del result["rougeLsum"]
+    result = {key: value.mid.fmeasure * 100 for key, value in result.items()}
     return result["rouge2"], result
 
 if __name__=='__main__':
