@@ -31,8 +31,7 @@ def train(dataset: str="xsum", lr: float=0.00005, batch_size: int=2, epoch_num: 
 
     raw_datasets = load_dataset(dataset, cache_dir=cache_dir)
     trainloader = torch.utils.data.DataLoader(raw_datasets['train'], batch_size=batch_size, shuffle=is_shuffled)
-    devloader = torch.utils.data.DataLoader(raw_datasets['validation'], batch_size=batch_size, shuffle=False)
-    devloader = devloader.select(range(1600))
+    devloader = torch.utils.data.DataLoader(raw_datasets['validation'].select(range(1600)), batch_size=batch_size, shuffle=False)
 
     def preprocess_fn(examples):
         result = tokenizer(examples["document"], padding=True, truncation='longest_first', max_length=(tokenizer.model_max_length), return_tensors='pt')
