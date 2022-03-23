@@ -149,7 +149,7 @@ def eval(model: nn.Module, preprocess_fn, dataloader: torch.utils.data.DataLoade
     for batch in dataloader:
         inputs, labels = preprocess_fn(batch)
         inputs.to(device)
-        preds = model.generate(inputs['input_ids'], attention_mask=inputs['attention_mask'], num_beams=6, max_length=60, min_length=10).sequences
+        preds = model.generate(inputs['input_ids'], attention_mask=inputs['attention_mask'], num_beams=6, max_length=60, min_length=10)
         
         preds = tokenizer.batch_decode(preds, skip_special_tokens=True)
         labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
@@ -161,8 +161,8 @@ def eval(model: nn.Module, preprocess_fn, dataloader: torch.utils.data.DataLoade
         preds = ["\n".join(nltk.sent_tokenize(pred)) for pred in preds]
         labels = ["\n".join(nltk.sent_tokenize(label)) for label in labels]
         
-        metric.add_batch(predictions=preds, references=labels, use_stemmer = True)
-    result = metric.compute()
+        metric.add_batch(predictions=preds, references=labels)
+    result = metric.compute(use_stemmer = True)
     result = {key: value.mid.fmeasure * 100 for key, value in result.items()}
     return result["rouge2"], result
 

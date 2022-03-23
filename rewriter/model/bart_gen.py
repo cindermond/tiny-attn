@@ -249,7 +249,8 @@ class BartDecoderBL(BartPretrainedModel):
             config.d_model,
         )
         embed_dim = config.d_model
-        self.layers = nn.ModuleList([BartDecoderLayer(config) if i%2==1 else BartTinyAttention(input_embd=embed_dim, output_embd=embed_dim, attention_embd=64, attention_head=1, attention_dropout=0.1) for i in range(2*(config.decoder_layers+output_nlayers))])
+        self.layers = nn.ModuleList([BartDecoderLayer(config) for _ in range(config.decoder_layers+output_nlayers)])
+        self.alllayers = nn.ModuleList([self.layers[(i-1)//2] if i%2==1 else BartTinyAttention(input_embd=embed_dim, output_embd=embed_dim, attention_embd=64, attention_head=1, attention_dropout=0.1) for i in range(2*(config.decoder_layers+output_nlayers))])
         self.layernorm_embedding = nn.LayerNorm(config.d_model)
         
 
@@ -411,12 +412,12 @@ class BartDecoderBL(BartPretrainedModel):
         # check if head_mask/cross_attn_head_mask has a correct number of layers specified if desired
         for attn_mask, mask_name in zip([head_mask, cross_attn_head_mask], ["head_mask", "cross_attn_head_mask"]):
             if attn_mask is not None:
-                if attn_mask.size()[0] != (len(self.layers)):
+                if attn_mask.size()[0] != (len(self.alllayers)):
                     raise ValueError(
                         "The `{mask_name}` should be specified for {len(self.layers)} layers, but it is for {head_mask.size()[0]}."
                     )
 
-        for idx, decoder_layer in enumerate(self.layers):
+        for idx, decoder_layer in enumerate(self.alllayers):
             # add LayerDrop (see https://arxiv.org/abs/1909.11556 for description)
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
