@@ -27,7 +27,7 @@ def train(dataset: str="xsum", lr: float=0.00005, batch_size: int=2, epoch_num: 
     save_name = f'dataset={dataset}-nlayers={nlayers}-d_hid={d_hid}-nhead={nhead}-lr={lr}-is_rewriter={is_rewriter}-output_nlayers={output_nlayers}-weight_decay={weight_decay}-seed={seed}-warmup_steps={warmup_steps}-epoch_num={epoch_num}-scheduler_type={scheduler_type}'
     print(save_name)
     
-    tokenizer = AutoTokenizer.from_pretrained("roberta-large", cache_dir=cache_dir)
+    tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", cache_dir=cache_dir)
 
     raw_datasets = load_dataset(dataset, cache_dir=cache_dir)
     trainloader = torch.utils.data.DataLoader(raw_datasets['train'], batch_size=batch_size, shuffle=is_shuffled)
