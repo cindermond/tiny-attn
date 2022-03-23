@@ -28,10 +28,9 @@ class BartTinyAttention(nn.Module):
         self.linear2 = nn.Linear(attention_embd, output_embd)
         self.norm = nn.LayerNorm(input_embd)
 
-    def forward(self, hidden_states, encoder_hidden_states=None, past_key_values = None, attention_mask = None, **kwargs):
+    def forward(self, hidden_states, encoder_hidden_states=None, past_key_values = None, attention_mask = None, encoder_attention_mask = None, **kwargs):
         new_hs = self.norm(hidden_states)
         new_hs = self.linear1(new_hs)
-        #new_hs, _, past_key_value = self.attention(new_hs, key_value_states=encoder_hidden_states, past_key_value = past_key_values, attention_mask=attention_mask)
-        new_hs, _, past_key_value = self.attention(new_hs, past_key_value = past_key_values, attention_mask=attention_mask)
+        new_hs, _, past_key_value = self.attention(new_hs, key_value_states=encoder_hidden_states, past_key_value = past_key_values, attention_mask=encoder_attention_mask)
         new_hs = self.linear2(new_hs)
         return (hidden_states + new_hs*0.01, past_key_value)
