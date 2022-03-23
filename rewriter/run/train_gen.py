@@ -66,10 +66,10 @@ def train(dataset: str="xsum", lr: float=0.00005, batch_size: int=2, epoch_num: 
     for p in model.model.encoder.layers.parameters():
         p.requires_grad = False
     if output_nlayers == 0:
-        for p in model.model.decoder.layers[1::2].parameters():
+        for p in model.model.decoder.layers.parameters():
             p.requires_grad = False
     else:
-        for p in model.model.decoder.layers[1:-(2*output_nlayers-1):2].parameters():
+        for p in model.model.decoder.layers[:-output_nlayers].parameters():
             p.requires_grad = False
 
     model = model.to(device)
@@ -92,9 +92,9 @@ def train(dataset: str="xsum", lr: float=0.00005, batch_size: int=2, epoch_num: 
     model.model.encoder.layers.eval()
     model.model.shared.eval()
     if output_nlayers == 0:
-        model.model.decoder.layers[1::2].eval()
+        model.model.decoder.layers.eval()
     else:
-        model.model.decoder.layers[1:-(2*output_nlayers-1):2].eval()
+        model.model.decoder.layers[:-output_nlayers].eval()
     total_loss = 0
     log_interval = 1000
     eval_interval = math.floor(len(trainloader)/eval_times)
@@ -133,9 +133,9 @@ def train(dataset: str="xsum", lr: float=0.00005, batch_size: int=2, epoch_num: 
                 model.model.encoder.layers.eval()
                 model.model.shared.eval()
                 if output_nlayers == 0:
-                    model.model.decoder.layers[1::2].eval()
+                    model.model.decoder.layers.eval()
                 else:
-                    model.model.decoder.layers[1:-(2*output_nlayers-1):2].eval()
+                    model.model.decoder.layers[:-output_nlayers].eval()
 
         torch.save(make_cp(model, epoch) ,os.path.abspath(f'log/weight/weight-last-{save_name}.pt'))
         torch.save(make_cp(optimizer, epoch) ,os.path.abspath(f'log/weight/opt-last-{save_name}.pt'))
