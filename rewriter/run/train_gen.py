@@ -16,7 +16,7 @@ from rewriter.model.bart_gen import BartForConditionalGenerationBL
 from rewriter.utils.oom import chunk_batch
 
 
-def train(dataset: str="xsum", lr: float=0.00005, batch_size: int=2, epoch_num: int=20, nhead: int=4, d_hid: int=512, nlayers: int=1, dropout: float=0.1, is_shuffled: bool=True, is_rewriter: bool=True, output_nlayers: int=1, weight_decay: float=0, cache_dir: str='data', seed: int=1234, warmup_steps: int=0, load_name:str = "None", scheduler_type:str = "linear", eval_times:int = 10000, encoder_attn_size = 64, decoder_attn_size = 64) -> None:
+def train(dataset: str="xsum", lr: float=0.00005, batch_size: int=2, epoch_num: int=20, nhead: int=4, d_hid: int=512, nlayers: int=1, dropout: float=0.1, is_shuffled: bool=True, is_rewriter: bool=True, output_nlayers: int=1, weight_decay: float=0, cache_dir: str='data', seed: int=1234, warmup_steps: int=0, load_name:str = "None", scheduler_type:str = "linear", eval_times:int = 10000, encoder_attn_size = 32, decoder_attn_size = 64) -> None:
     #reproducibility
     random.seed(seed)
     torch.manual_seed(seed)
