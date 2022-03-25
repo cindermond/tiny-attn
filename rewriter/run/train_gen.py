@@ -31,11 +31,11 @@ def train(dataset: str="xsum", lr: float=0.00005, batch_size: int=2, epoch_num: 
 
     raw_datasets = load_dataset(dataset, cache_dir=cache_dir)
     trainloader = torch.utils.data.DataLoader(raw_datasets['train'], batch_size=batch_size, shuffle=is_shuffled)
-    devloader = torch.utils.data.DataLoader(raw_datasets['validation'].select(range(1600)), batch_size=batch_size, shuffle=False)
+    devloader = torch.utils.data.DataLoader(raw_datasets['validation'].select(range(1600)), batch_size=1, shuffle=False)
 
-    def preprocess_fn(examples):
+    def preprocess_fn(examples, label_max_length = 128):
         result = tokenizer(examples["document"], padding=True, truncation='longest_first', max_length=512, return_tensors='pt')
-        label = tokenizer(examples["summary"], padding=True, truncation='longest_first', max_length=128, return_tensors='pt')["input_ids"]
+        label = tokenizer(examples["summary"], padding=True, truncation='longest_first', max_length=label_max_length, return_tensors='pt')["input_ids"]
         return result, label
 
     metric = load_metric("rouge")
@@ -148,7 +148,7 @@ def eval(model: nn.Module, preprocess_fn, dataloader: torch.utils.data.DataLoade
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     model.eval()
     for batch in dataloader:
-        inputs, labels = preprocess_fn(batch)
+        inputs, labels = preprocess_fn(batch, 60)
         inputs.to(device)
         preds = model.generate(inputs['input_ids'], attention_mask=inputs['attention_mask'], num_beams=6, max_length=60, min_length=10)
         
