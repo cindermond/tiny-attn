@@ -1,6 +1,6 @@
 from datasets import load_dataset, load_metric
 from transformers import AutoTokenizer
-from transformers.optimization import get_linear_schedule_with_warmup, get_constant_schedule_with_warmup,get_cosine_schedule_with_warmup
+from transformers.optimization import get_linear_schedule_with_warmup, get_constant_schedule_with_warmup,get_cosine_schedule_with_warmup,get_polynomial_decay_schedule_with_warmup
 import torch
 import os.path
 
@@ -36,6 +36,7 @@ def train(dataset: str="xsum", lr: float=0.00005, batch_size: int=2, epoch_num: 
     def preprocess_fn(examples, label_max_size = 128):
         result = tokenizer(examples["document"], padding=True, truncation='longest_first', max_length=512, return_tensors='pt')
         label = tokenizer(examples["summary"], padding=True, truncation='longest_first', max_length=label_max_size, return_tensors='pt')["input_ids"]
+        label.masked_fill_(label == 1, -100)
         return result, label
 
     metric = load_metric("rouge")
@@ -75,6 +76,8 @@ def train(dataset: str="xsum", lr: float=0.00005, batch_size: int=2, epoch_num: 
         scheduler = get_constant_schedule_with_warmup(optimizer,num_warmup_steps=warmup_steps,last_epoch = start_epoch-1)
     elif scheduler_type=="cosine":
         scheduler = get_cosine_schedule_with_warmup(optimizer,num_warmup_steps=warmup_steps,num_training_steps=len(trainloader)*epoch_num,last_epoch = start_epoch-1)
+    elif scheduler_type=="poly":
+        scheduler = get_polynomial_decay_schedule_with_warmup(optimizer,num_warmup_steps=warmup_steps,num_training_steps=len(trainloader)*epoch_num,last_epoch = start_epoch-1)
 
 
     #training
@@ -95,7 +98,7 @@ def train(dataset: str="xsum", lr: float=0.00005, batch_size: int=2, epoch_num: 
                 loss = output.loss / num_chunks
                 loss.backward()
 
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 0.1)
             optimizer.step()
             total_loss += loss.item()
             scheduler.step()
