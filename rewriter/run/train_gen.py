@@ -11,12 +11,12 @@ import random
 import math
 import nltk
 from torch.optim import AdamW
-
+import time
 from rewriter.model.bart_gen import BartForConditionalGenerationBL
 from rewriter.utils.oom import chunk_batch
 
 
-def train(dataset: str="xsum", lr: float=0.00005, batch_size: int=2, epoch_num: int=20, nhead: int=4, d_hid: int=512, nlayers: int=1, dropout: float=0.1, is_shuffled: bool=True, is_rewriter: bool=True, output_nlayers: int=1, weight_decay: float=0, cache_dir: str='data', seed: int=1234, warmup_steps: int=0, load_name:str = "None", scheduler_type:str = "linear", eval_times:int = 10000, encoder_attn_size = 32, decoder_attn_size = 64) -> None:
+def train(dataset: str="xsum", lr: float=0.00003, batch_size: int=1, epoch_num: int=10, nhead: int=4, d_hid: int=512, nlayers: int=1, dropout: float=0.1, is_shuffled: bool=True, is_rewriter: bool=True, output_nlayers: int=1, weight_decay: float=0.01, cache_dir: str='data', seed: int=1234, warmup_steps: int=5000, load_name:str = "None", scheduler_type:str = "linear", eval_times:int = 5000, encoder_attn_size = 32, decoder_attn_size = 32, code = '0000') -> None:
     #reproducibility
     random.seed(seed)
     torch.manual_seed(seed)
@@ -24,14 +24,14 @@ def train(dataset: str="xsum", lr: float=0.00005, batch_size: int=2, epoch_num: 
 
     #initializes
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
-    save_name = f'dataset={dataset}-nlayers={nlayers}-d_hid={d_hid}-nhead={nhead}-lr={lr}-is_rewriter={is_rewriter}-output_nlayers={output_nlayers}-weight_decay={weight_decay}-seed={seed}-warmup_steps={warmup_steps}-epoch_num={epoch_num}-scheduler_type={scheduler_type}-encoder_attn_size={encoder_attn_size}-decoder_attn_size={decoder_attn_size}'
+    save_name = f'code={code}=dataset={dataset}-nlayers={nlayers}-d_hid={d_hid}-nhead={nhead}-lr={lr}-is_rewriter={is_rewriter}-output_nlayers={output_nlayers}-weight_decay={weight_decay}-seed={seed}-warmup_steps={warmup_steps}-epoch_num={epoch_num}-scheduler_type={scheduler_type}-encoder_attn_size={encoder_attn_size}-decoder_attn_size={decoder_attn_size}'
     print(save_name)
     
     tokenizer = AutoTokenizer.from_pretrained("facebook/bart-large", cache_dir=cache_dir)
 
     raw_datasets = load_dataset(dataset, cache_dir=cache_dir)
-    trainloader = torch.utils.data.DataLoader(raw_datasets['train'], batch_size=batch_size, shuffle=is_shuffled)
-    devloader = torch.utils.data.DataLoader(raw_datasets['validation'].select(range(1600)), batch_size=1, shuffle=False)
+    trainloader = torch.utils.data.DataLoader(raw_datasets['train'].select(range(5000)), batch_size=batch_size, shuffle=is_shuffled)
+    devloader = torch.utils.data.DataLoader(raw_datasets['validation'].select(range(10)), batch_size=1, shuffle=False)
 
     def preprocess_fn(examples, label_max_length = 128):
         result = tokenizer(examples["document"], padding=True, truncation='longest_first', max_length=512, return_tensors='pt')
@@ -50,7 +50,7 @@ def train(dataset: str="xsum", lr: float=0.00005, batch_size: int=2, epoch_num: 
                 'epoch': current_epoch,
                 'max_dev_metric': max_dev_metric}
 
-    model = BartForConditionalGenerationBL.from_pretrained("facebook/bart-large", output_nlayers=output_nlayers, is_rewriter=is_rewriter, rewriter_nhead=nhead, rewriter_d_hid=d_hid, rewriter_dropout=dropout, rewriter_nlayers=nlayers, encoder_attn_size=encoder_attn_size, decoder_attn_size=decoder_attn_size)
+    model = BartForConditionalGenerationBL.from_pretrained("facebook/bart-large", output_nlayers=output_nlayers, is_rewriter=is_rewriter, rewriter_nhead=nhead, rewriter_d_hid=d_hid, rewriter_dropout=dropout, rewriter_nlayers=nlayers, encoder_attn_size=encoder_attn_size, decoder_attn_size=decoder_attn_size, code=code)
 
     if os.path.exists(os.path.abspath(f'log/weight/weight-last-{save_name}.pt')):
         last_cp = torch.load(os.path.abspath(f'log/weight/weight-last-{save_name}.pt'))
@@ -111,8 +111,10 @@ def train(dataset: str="xsum", lr: float=0.00005, batch_size: int=2, epoch_num: 
                 output = model(mbatch['input_ids'], mbatch['attention_mask'], labels=mbatch['labels'])
                 loss = output.loss / num_chunks
                 loss.backward()
-
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
+            if code[1] == '1':
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 0.1)
+            else:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
             optimizer.step()
             total_loss += loss.item()
             scheduler.step()
