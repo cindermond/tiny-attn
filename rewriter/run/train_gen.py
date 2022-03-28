@@ -12,7 +12,7 @@ import math
 import nltk
 from torch.optim import AdamW
 import time
-from rewriter.model.bart_gen import BartForConditionalGenerationBL
+from rewriter.model.bart_exp import BartForConditionalGenerationBL
 from rewriter.utils.oom import chunk_batch
 
 
@@ -111,9 +111,6 @@ def train(dataset: str="xsum", lr: float=0.00003, batch_size: int=1, epoch_num: 
                 output = model(mbatch['input_ids'], mbatch['attention_mask'], labels=mbatch['labels'])
                 loss = output.loss / num_chunks
                 loss.backward()
-            if code[1] == '1':
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 0.1)
-            else:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
             optimizer.step()
             total_loss += loss.item()
