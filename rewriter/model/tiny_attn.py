@@ -27,8 +27,9 @@ class BartTinyAttention(nn.Module):
         self.attention = BartAttention(attention_embd, attention_head, attention_dropout, is_decoder=True)
         self.linear2 = nn.Linear(attention_embd, output_embd)
         self.norm = nn.LayerNorm(input_embd)
-        for p in self.parameters():
-            p *= 0.001
+        with torch.no_grad():
+            for p in self.parameters():
+                p *= 0.001
 
     def forward(self, hidden_states, encoder_hidden_states=None, past_key_values = None, attention_mask = None, encoder_attention_mask = None, **kwargs):
         new_hs = self.norm(hidden_states)

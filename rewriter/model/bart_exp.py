@@ -267,6 +267,7 @@ class BartDecoderLayerBL(nn.Module):
         past_key_value: Optional[Tuple[torch.Tensor]] = None,
         output_attentions: Optional[bool] = False,
         use_cache: Optional[bool] = True,
+        mapped_encoder_hidden_states = None
     ):
         """
         Args:
@@ -291,7 +292,7 @@ class BartDecoderLayerBL(nn.Module):
         tiny_past_key_value = past_key_value[4:] if past_key_value is not None else None
 
         if self.code[0] == '0':
-            tiny_output, last_key_value = self.tiny_attn(hidden_states, encoder_hidden_states, tiny_past_key_value, attention_mask, encoder_attention_mask)
+            tiny_output, last_key_value = self.tiny_attn(hidden_states, mapped_encoder_hidden_states, tiny_past_key_value, attention_mask, encoder_attention_mask)
             if self.code[1] == '0':
                 hidden_states += tiny_output
             elif self.code[1] == '1':
@@ -324,7 +325,7 @@ class BartDecoderLayerBL(nn.Module):
             residual = hidden_states
 
             if self.code[0] == '1':
-                tiny_output, last_key_value = self.tiny_attn(hidden_states, encoder_hidden_states, tiny_past_key_value, attention_mask, encoder_attention_mask)
+                tiny_output, last_key_value = self.tiny_attn(hidden_states, mapped_encoder_hidden_states, tiny_past_key_value, attention_mask, encoder_attention_mask)
                 if self.code[1] == '0':
                     hidden_states += tiny_output
                 elif self.code[1] == '1':
@@ -355,7 +356,7 @@ class BartDecoderLayerBL(nn.Module):
         # Fully Connected
         residual = hidden_states
         if self.code[0] == '2':
-            tiny_output, last_key_value = self.tiny_attn(hidden_states, encoder_hidden_states, tiny_past_key_value, attention_mask, encoder_attention_mask)
+            tiny_output, last_key_value = self.tiny_attn(hidden_states, mapped_encoder_hidden_states, tiny_past_key_value, attention_mask, encoder_attention_mask)
             if self.code[1] == '0':
                 hidden_states += tiny_output
             elif self.code[1] == '1':
@@ -592,34 +593,20 @@ class BartDecoderBL(BartPretrainedModel):
 
             past_key_value = past_key_values[idx] if past_key_values is not None else None
             
-            if idx%2==1:
-                layer_outputs = decoder_layer(
-                    hidden_states,
-                    attention_mask=attention_mask,
-                    encoder_hidden_states=encoder_hidden_states,
-                    encoder_attention_mask=encoder_attention_mask,
-                    layer_head_mask=(head_mask[idx] if head_mask is not None else None),
-                    cross_attn_layer_head_mask=(
-                        cross_attn_head_mask[idx] if cross_attn_head_mask is not None else None
-                    ),
-                    past_key_value=past_key_value,
-                    output_attentions=output_attentions,
-                    use_cache=use_cache,
-                )
-            else:
-                layer_outputs = decoder_layer(
-                    hidden_states,
-                    attention_mask=attention_mask,
-                    encoder_hidden_states=mapped_encoder_hidden_states,
-                    encoder_attention_mask=encoder_attention_mask,
-                    layer_head_mask=(head_mask[idx] if head_mask is not None else None),
-                    cross_attn_layer_head_mask=(
-                        cross_attn_head_mask[idx] if cross_attn_head_mask is not None else None
-                    ),
-                    past_key_value=past_key_value,
-                    output_attentions=output_attentions,
-                    use_cache=use_cache,
-                )
+            layer_outputs = decoder_layer(
+                hidden_states,
+                attention_mask=attention_mask,
+                encoder_hidden_states=encoder_hidden_states,
+                encoder_attention_mask=encoder_attention_mask,
+                layer_head_mask=(head_mask[idx] if head_mask is not None else None),
+                cross_attn_layer_head_mask=(
+                    cross_attn_head_mask[idx] if cross_attn_head_mask is not None else None
+                ),
+                past_key_value=past_key_value,
+                output_attentions=output_attentions,
+                use_cache=use_cache,
+                mapped_encoder_hidden_states = mapped_encoder_hidden_states
+            )
             hidden_states = layer_outputs[0]
             if use_cache:
                 next_decoder_cache += (layer_outputs[1],)
