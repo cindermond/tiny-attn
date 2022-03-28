@@ -294,9 +294,9 @@ class BartDecoderLayerBL(nn.Module):
         if self.code[0] == '0':
             tiny_output, last_key_value = self.tiny_attn(hidden_states, mapped_encoder_hidden_states, tiny_past_key_value, attention_mask, encoder_attention_mask)
             if self.code[1] == '0':
-                hidden_states += tiny_output
+                hidden_states = tiny_output + hidden_states
             elif self.code[1] == '1':
-                residual += tiny_output
+                residual = tiny_output + residual
                 
 
         # Self Attention
@@ -314,7 +314,7 @@ class BartDecoderLayerBL(nn.Module):
         hidden_states = residual + hidden_states
 
         if self.code[1] == '2':
-            hidden_states += tiny_output
+            hidden_states = tiny_output + hidden_states
 
         hidden_states = self.self_attn_layer_norm(hidden_states)
 
@@ -327,9 +327,9 @@ class BartDecoderLayerBL(nn.Module):
             if self.code[0] == '1':
                 tiny_output, last_key_value = self.tiny_attn(hidden_states, mapped_encoder_hidden_states, tiny_past_key_value, attention_mask, encoder_attention_mask)
                 if self.code[1] == '0':
-                    hidden_states += tiny_output
+                    hidden_states = tiny_output + hidden_states
                 elif self.code[1] == '1':
-                    residual += tiny_output
+                    residual = tiny_output + residual
 
             # cross_attn cached key/values tuple is at positions 3,4 of present_key_value tuple
             cross_attn_past_key_value = past_key_value[2:4] if past_key_value is not None else None
@@ -346,7 +346,7 @@ class BartDecoderLayerBL(nn.Module):
 
 
             if self.code[1] == '3':
-                hidden_states += tiny_output
+                hidden_states = tiny_output + hidden_states
 
             hidden_states = self.encoder_attn_layer_norm(hidden_states)
 
@@ -358,9 +358,9 @@ class BartDecoderLayerBL(nn.Module):
         if self.code[0] == '2':
             tiny_output, last_key_value = self.tiny_attn(hidden_states, mapped_encoder_hidden_states, tiny_past_key_value, attention_mask, encoder_attention_mask)
             if self.code[1] == '0':
-                hidden_states += tiny_output
+                hidden_states = tiny_output + hidden_states
             elif self.code[1] == '1':
-                residual += tiny_output
+                residual = tiny_output + residual
         hidden_states = self.activation_fn(self.fc1(hidden_states))
         hidden_states = nn.functional.dropout(hidden_states, p=self.activation_dropout, training=self.training)
         hidden_states = self.fc2(hidden_states)
@@ -368,7 +368,7 @@ class BartDecoderLayerBL(nn.Module):
         hidden_states = residual + hidden_states
 
         if self.code[1] == '4':
-            hidden_states += tiny_output
+            hidden_states = tiny_output + hidden_states
 
         hidden_states = self.final_layer_norm(hidden_states)
 
