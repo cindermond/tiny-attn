@@ -137,8 +137,8 @@ def train(dataset: str="xsum", lr: float=0.00003, batch_size: int=1, epoch_num: 
                 else:
                     model.model.decoder.layers[:-output_nlayers].eval()
 
-        torch.save(make_cp(model, epoch) ,os.path.abspath(f'log/weight/weight-last-{save_name}.pt'))
-        torch.save(make_cp(optimizer, epoch) ,os.path.abspath(f'log/weight/opt-last-{save_name}.pt'))
+        #torch.save(make_cp(model, epoch) ,os.path.abspath(f'log/weight/weight-last-{save_name}.pt'))
+        #torch.save(make_cp(optimizer, epoch) ,os.path.abspath(f'log/weight/opt-last-{save_name}.pt'))
 
     
 @torch.no_grad()
