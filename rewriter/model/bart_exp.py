@@ -6,6 +6,7 @@ from transformers.modeling_outputs import Seq2SeqLMOutput, Seq2SeqModelOutput, B
 from transformers.models.bart.modeling_bart import ACT2FN, BartPretrainedModel, BartConfig, Optional, BartAttention, BartEncoderLayer, BartLearnedPositionalEmbedding
 from rewriter.model.tiny_attn import BartTinyAttention, TinyAttention
 from typing import Tuple
+import random
 
 def _make_causal_mask(input_ids_shape: torch.Size, dtype: torch.dtype, past_key_values_length: int = 0):
     """
@@ -50,6 +51,94 @@ def shift_tokens_right(input_ids: torch.Tensor, pad_token_id: int, decoder_start
 
     return shifted_input_ids
 
+class BartEncoderLayerBL(nn.Module):
+    def __init__(self, config: BartConfig, input_embd=1024, output_embd=1024, attention_embd=32, attention_head=1, attention_dropout=0.1, code = '0000'):
+        super().__init__()
+        self.embed_dim = config.d_model
+        self.self_attn = BartAttention(
+            embed_dim=self.embed_dim,
+            num_heads=config.encoder_attention_heads,
+            dropout=config.attention_dropout,
+        )
+        self.self_attn_layer_norm = nn.LayerNorm(self.embed_dim)
+        self.dropout = config.dropout
+        self.activation_fn = ACT2FN[config.activation_function]
+        self.activation_dropout = config.activation_dropout
+        self.fc1 = nn.Linear(self.embed_dim, config.encoder_ffn_dim)
+        self.fc2 = nn.Linear(config.encoder_ffn_dim, self.embed_dim)
+        self.final_layer_norm = nn.LayerNorm(self.embed_dim)
+        self.tiny_attn = TinyAttention(input_embd=input_embd, output_embd=output_embd, attention_embd=attention_embd, attention_head=attention_head, attention_dropout=attention_dropout)
+        self.code = code
+
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        attention_mask: torch.Tensor,
+        layer_head_mask: torch.Tensor,
+        output_attentions: bool = False,
+        old_attention_mask: torch.Tensor = None
+    ):
+        """
+        Args:
+            hidden_states (`torch.FloatTensor`): input to the layer of shape `(seq_len, batch, embed_dim)`
+            attention_mask (`torch.FloatTensor`): attention mask of size
+                `(batch, 1, tgt_len, src_len)` where padding elements are indicated by very large negative values.
+            layer_head_mask (`torch.FloatTensor`): mask for attention heads in a given layer of size
+                `(encoder_attention_heads,)`.
+            output_attentions (`bool`, *optional*):
+                Whether or not to return the attentions tensors of all attention layers. See `attentions` under
+                returned tensors for more detail.
+        """
+        residual = hidden_states
+
+        if self.code[2] == '0':
+            tiny_output = self.tiny_attn(hidden_states, old_attention_mask)
+            if self.code[3] == '0':
+                hidden_states = tiny_output + hidden_states
+            elif self.code[3] == '1':
+                residual = tiny_output + residual
+
+        hidden_states, attn_weights, _ = self.self_attn(
+            hidden_states=hidden_states,
+            attention_mask=attention_mask,
+            layer_head_mask=layer_head_mask,
+            output_attentions=output_attentions,
+        )
+        hidden_states = nn.functional.dropout(hidden_states, p=self.dropout, training=self.training)
+        hidden_states = residual + hidden_states
+        if self.code[3] == '2':
+            hidden_states = hidden_states + tiny_output
+        hidden_states = self.self_attn_layer_norm(hidden_states)
+
+        residual = hidden_states
+        if self.code[2] == '1':
+            tiny_output = self.tiny_attn(hidden_states, old_attention_mask)
+            if self.code[3] == '0':
+                hidden_states = tiny_output + hidden_states
+            elif self.code[3] == '1':
+                residual = tiny_output + residual
+        hidden_states = self.activation_fn(self.fc1(hidden_states))
+        hidden_states = nn.functional.dropout(hidden_states, p=self.activation_dropout, training=self.training)
+        hidden_states = self.fc2(hidden_states)
+        hidden_states = nn.functional.dropout(hidden_states, p=self.dropout, training=self.training)
+        hidden_states = residual + hidden_states
+        if self.code[3] == '3':
+            hidden_states = hidden_states + tiny_output
+        hidden_states = self.final_layer_norm(hidden_states)
+
+        if hidden_states.dtype == torch.float16 and (
+            torch.isinf(hidden_states).any() or torch.isnan(hidden_states).any()
+        ):
+            clamp_value = torch.finfo(hidden_states.dtype).max - 1000
+            hidden_states = torch.clamp(hidden_states, min=-clamp_value, max=clamp_value)
+
+        outputs = (hidden_states,)
+
+        if output_attentions:
+            outputs += (attn_weights,)
+
+        return outputs
+
 class BartEncoderBL(BartPretrainedModel):
     """
     Transformer encoder consisting of *config.encoder_layers* self attention layers. Each layer is a
@@ -60,7 +149,7 @@ class BartEncoderBL(BartPretrainedModel):
         embed_tokens (nn.Embedding): output embedding
     """
 
-    def __init__(self, config: BartConfig, embed_tokens: Optional[nn.Embedding] = None, is_rewriter=True, rewriter_nhead=4, rewriter_d_hid=512, rewriter_dropout=0.1, rewriter_nlayers=1, attn_size=64):
+    def __init__(self, config: BartConfig, embed_tokens: Optional[nn.Embedding] = None, is_rewriter=True, rewriter_nhead=4, rewriter_d_hid=512, rewriter_dropout=0.1, rewriter_nlayers=1, attn_size=64, code='0000'):
         super().__init__(config)
 
         self.dropout = config.dropout
@@ -80,9 +169,9 @@ class BartEncoderBL(BartPretrainedModel):
             config.max_position_embeddings,
             embed_dim,
         )
-        self.layers = nn.ModuleList([BartEncoderLayer(config) for _ in range(config.encoder_layers)])
+        self.layers = nn.ModuleList([BartEncoderLayerBL(config, input_embd=embed_dim, output_embd=embed_dim, attention_embd=attn_size, attention_head=1, attention_dropout=0.1, code=code) for _ in range(config.encoder_layers)])
         self.layernorm_embedding = nn.LayerNorm(embed_dim)
-        self.attention_layer = nn.ModuleList([TinyAttention(input_embd=embed_dim, output_embd=embed_dim, attention_embd=attn_size, attention_head=1, attention_dropout=0.1) for _ in range(config.encoder_layers)])
+        #self.attention_layer = nn.ModuleList([TinyAttention(input_embd=embed_dim, output_embd=embed_dim, attention_embd=attn_size, attention_head=1, attention_dropout=0.1) for _ in range(config.encoder_layers)])
 
         self.is_rewriter = is_rewriter
         if is_rewriter:
@@ -174,6 +263,7 @@ class BartEncoderBL(BartPretrainedModel):
         # expand attention_mask
         if attention_mask is not None:
             # [bsz, seq_len] -> [bsz, 1, tgt_seq_len, src_seq_len]
+            old_attention_mask = attention_mask
             attention_mask = _expand_mask(attention_mask, inputs_embeds.dtype)
 
         encoder_states = () if output_hidden_states else None
@@ -191,23 +281,25 @@ class BartEncoderBL(BartPretrainedModel):
             hidden_states = self.rewriter(hidden_states)
 
 
-        for idx, (attn_layer, encoder_layer) in enumerate(zip(self.attention_layer,self.layers)):
+        #for idx, (attn_layer, encoder_layer) in enumerate(zip(self.attention_layer,self.layers)):
+        for idx, encoder_layer in enumerate(self.layers):
             if output_hidden_states:
                 encoder_states = encoder_states + (hidden_states,)
             # add LayerDrop (see https://arxiv.org/abs/1909.11556 for description)
-            #dropout_probability = random.uniform(0, 1)
-            #if self.training and (dropout_probability < self.layerdrop):  # skip the layer
-            #    layer_outputs = (None, None)
-            #else:
-            hidden_states = attn_layer(hidden_states)
-            layer_outputs = encoder_layer(
-                hidden_states,
-                attention_mask,
-                layer_head_mask=(head_mask[idx] if head_mask is not None else None),
-                output_attentions=output_attentions,
-            )
+            dropout_probability = random.uniform(0, 1)
+            if self.training and (dropout_probability < self.layerdrop):  # skip the layer
+                layer_outputs = (None, None)
+            else:
+            #hidden_states = attn_layer(hidden_states)
+                layer_outputs = encoder_layer(
+                    hidden_states,
+                    attention_mask,
+                    layer_head_mask=(head_mask[idx] if head_mask is not None else None),
+                    output_attentions=output_attentions,
+                    old_attention_mask=old_attention_mask
+                )
 
-            hidden_states = layer_outputs[0]
+                hidden_states = layer_outputs[0]
 
             if output_attentions:
                 all_attentions = all_attentions + (layer_outputs[1],)
@@ -223,7 +315,7 @@ class BartEncoderBL(BartPretrainedModel):
 
 
 class BartDecoderLayerBL(nn.Module):
-    def __init__(self, config: BartConfig, input_embd=1024, output_embd=1024, attention_embd=32, attention_head=1, attention_dropout=0.1, code='00'):
+    def __init__(self, config: BartConfig, input_embd=1024, output_embd=1024, attention_embd=32, attention_head=1, attention_dropout=0.1, code='0000'):
         super().__init__()
         self.embed_dim = config.d_model
 
@@ -587,9 +679,9 @@ class BartDecoderBL(BartPretrainedModel):
             # add LayerDrop (see https://arxiv.org/abs/1909.11556 for description)
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
-            #dropout_probability = random.uniform(0, 1)
-            #if self.training and (dropout_probability < self.layerdrop):
-            #    continue
+            dropout_probability = random.uniform(0, 1)
+            if self.training and (dropout_probability < self.layerdrop):
+                continue
 
             past_key_value = past_key_values[idx] if past_key_values is not None else None
             
@@ -638,7 +730,7 @@ class BartModelBL(BartPretrainedModel):
         padding_idx, vocab_size = config.pad_token_id, config.vocab_size
         self.shared = nn.Embedding(vocab_size, config.d_model, padding_idx)
 
-        self.encoder = BartEncoderBL(config, self.shared, is_rewriter=is_rewriter,rewriter_nhead=rewriter_nhead,rewriter_d_hid=rewriter_d_hid,rewriter_dropout=rewriter_dropout,rewriter_nlayers=rewriter_nlayers, attn_size=encoder_attn_size)
+        self.encoder = BartEncoderBL(config, self.shared, is_rewriter=is_rewriter,rewriter_nhead=rewriter_nhead,rewriter_d_hid=rewriter_d_hid,rewriter_dropout=rewriter_dropout,rewriter_nlayers=rewriter_nlayers, attn_size=encoder_attn_size, code=code)
         self.decoder = BartDecoderBL(config, self.shared, output_nlayers=output_nlayers,attn_size=decoder_attn_size, code=code)
         self.encoder_hidden_state_mapping = nn.Linear(config.d_model, decoder_attn_size)
 
