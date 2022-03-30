@@ -39,7 +39,7 @@ class TinyAttention(nn.Module):
         q,k,v = torch.split(new_hs,self.attention_embd, dim=2)
         new_hs = self.attention(q,k,v, key_padding_mask=torch.logical_not(attention_mask))[0]
         new_hs = self.linear2(new_hs)
-        return hidden_states + new_hs
+        return new_hs
 
 
 class BartTinyAttention(nn.Module):

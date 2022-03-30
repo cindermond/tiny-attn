@@ -16,7 +16,7 @@ from rewriter.model.bart_exp import BartForConditionalGenerationBL
 from rewriter.utils.oom import chunk_batch
 
 
-def train(dataset: str="xsum", lr: float=0.00003, batch_size: int=2, epoch_num: int=10, nhead: int=4, d_hid: int=512, nlayers: int=1, dropout: float=0.1, is_shuffled: bool=True, is_rewriter: bool=True, output_nlayers: int=1, weight_decay: float=0.01, cache_dir: str='data', seed: int=1234, warmup_steps: int=5000, load_name:str = "None", scheduler_type:str = "linear", eval_times:int = 500, encoder_attn_size = 32, decoder_attn_size = 32, code = '0000') -> None:
+def train(dataset: str="xsum", lr: float=0.00005, batch_size: int=4, epoch_num: int=10, nhead: int=4, d_hid: int=512, nlayers: int=1, dropout: float=0.1, is_shuffled: bool=True, is_rewriter: bool=True, output_nlayers: int=1, weight_decay: float=0.01, cache_dir: str='data', seed: int=1234, warmup_steps: int=5000, load_name:str = "None", scheduler_type:str = "linear", eval_times:int = 1, encoder_attn_size = 64, decoder_attn_size = 64, code = '0000') -> None:
     #reproducibility
     random.seed(seed)
     torch.manual_seed(seed)
@@ -94,11 +94,15 @@ def train(dataset: str="xsum", lr: float=0.00003, batch_size: int=2, epoch_num: 
     #training
     model.train()
     model.model.encoder.layers.eval()
+    for l in model.model.encoder.layers:
+        l.tiny_attn.train()
     model.model.shared.eval()
     if output_nlayers == 0:
         model.model.decoder.layers.eval()
     else:
         model.model.decoder.layers[:-output_nlayers].eval()
+    for l in model.model.decoder.layers:
+        l.tiny_attn.train()
     total_loss = 0
     log_interval = 1000
     eval_interval = math.floor(len(trainloader)/eval_times)
@@ -134,11 +138,15 @@ def train(dataset: str="xsum", lr: float=0.00003, batch_size: int=2, epoch_num: 
                     torch.save(make_cp(model, epoch), os.path.abspath(f'log/weight/weight-best-{save_name}.pt'))
                 model.train()
                 model.model.encoder.layers.eval()
+                for l in model.model.encoder.layers:
+                    l.tiny_attn.train()
                 model.model.shared.eval()
                 if output_nlayers == 0:
                     model.model.decoder.layers.eval()
                 else:
                     model.model.decoder.layers[:-output_nlayers].eval()
+                for l in model.model.decoder.layers:
+                    l.tiny_attn.train()
 
         #torch.save(make_cp(model, epoch) ,os.path.abspath(f'log/weight/weight-last-{save_name}.pt'))
         #torch.save(make_cp(optimizer, epoch) ,os.path.abspath(f'log/weight/opt-last-{save_name}.pt'))
