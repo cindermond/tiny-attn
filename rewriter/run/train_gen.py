@@ -64,14 +64,17 @@ def train(dataset: str="xsum", lr: float=0.00003, batch_size: int=2, epoch_num: 
 
     for p in model.model.shared.parameters():
         p.requires_grad = False
-    for p in model.model.encoder.layers.parameters():
-        p.requires_grad = False
+    for name, p in model.model.encoder.layers.named_parameters():
+        if 'tiny_attn' not in name:
+            p.requires_grad = False
     if output_nlayers == 0:
-        for p in model.model.decoder.layers.parameters():
-            p.requires_grad = False
+        for name, p in model.model.decoder.layers.named_parameters():
+            if 'tiny_attn' not in name:
+                p.requires_grad = False
     else:
-        for p in model.model.decoder.layers[:-output_nlayers].parameters():
-            p.requires_grad = False
+        for name, p in model.model.decoder.layers[:-output_nlayers].named_parameters():
+            if 'tiny_attn' not in name:
+                p.requires_grad = False
 
     model = model.to(device)
     optimizer = AdamW(filter(lambda p: p.requires_grad, model.parameters()),lr=lr,weight_decay=weight_decay)
