@@ -6,7 +6,7 @@ from rewriter.model.tiny_attn import TinyAttention_
 
 
 class RobertaEncoderBL(nn.Module):
-    def __init__(self, config, input_embd=1024, output_embd=1024, attention_embd=64, attention_head=1, attention_dropout=0.1):
+    def __init__(self, config, input_embd=768, output_embd=768, attention_embd=64, attention_head=1, attention_dropout=0.1):
         super().__init__()
         self.config = config
         self.layer = nn.ModuleList([RobertaLayer(config) for _ in range(config.num_hidden_layers)])
@@ -46,7 +46,7 @@ class RobertaModelBL(RobertaPreTrainedModel):
         self.first_dropout = torch.nn.Dropout(0.1)
         self.is_rewriter = is_rewriter
         if is_rewriter:
-            self.rewriter = nn.TransformerEncoder(nn.TransformerEncoderLayer(1024, rewriter_nhead, rewriter_d_hid, rewriter_dropout, batch_first=True), rewriter_nlayers)
+            self.rewriter = nn.TransformerEncoder(nn.TransformerEncoderLayer(768, rewriter_nhead, rewriter_d_hid, rewriter_dropout, batch_first=True), rewriter_nlayers)
 
         self.post_init()
 
