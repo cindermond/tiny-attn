@@ -2,7 +2,7 @@ from transformers.models.roberta.modeling_roberta import RobertaPreTrainedModel,
 import torch
 from transformers.modeling_outputs import BaseModelOutput
 from torch import nn
-from rewriter.model.tiny_attn import TinyAttention
+from rewriter.model.tiny_attn import TinyAttention_
 
 
 class RobertaEncoderBL(nn.Module):
@@ -10,7 +10,7 @@ class RobertaEncoderBL(nn.Module):
         super().__init__()
         self.config = config
         self.layer = nn.ModuleList([RobertaLayer(config) for _ in range(config.num_hidden_layers)])
-        self.attention_layer = nn.ModuleList([TinyAttention(input_embd=input_embd, output_embd=output_embd, attention_embd=attention_embd, attention_head=attention_head, attention_dropout=attention_dropout) for _ in range(config.num_hidden_layers)])
+        self.attention_layer = nn.ModuleList([TinyAttention_(input_embd=input_embd, output_embd=output_embd, attention_embd=attention_embd, attention_head=attention_head, attention_dropout=attention_dropout) for _ in range(config.num_hidden_layers)])
 
     def forward(
         self,

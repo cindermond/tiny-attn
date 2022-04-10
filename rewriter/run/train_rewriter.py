@@ -34,10 +34,10 @@ def train(dataset: str="sst2", lr: float=0.00005, batch_size: int=8, epoch_num: 
 
     #initializes
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
-    save_name = f'dataset={dataset}-nlayers={nlayers}-d_hid={d_hid}-nhead={nhead}-lr={lr}-is_rewriter={is_rewriter}-output_nlayers={output_nlayers}-weight_decay={weight_decay}-seed={seed}-warmup_steps={warmup_steps}-epoch_num={epoch_num}-scheduler_type={scheduler_type}'
+    save_name = f'base-dataset={dataset}-nlayers={nlayers}-d_hid={d_hid}-nhead={nhead}-lr={lr}-is_rewriter={is_rewriter}-output_nlayers={output_nlayers}-weight_decay={weight_decay}-seed={seed}-warmup_steps={warmup_steps}-epoch_num={epoch_num}-scheduler_type={scheduler_type}'
     print(save_name)
     
-    tokenizer = AutoTokenizer.from_pretrained("roberta-large", cache_dir=cache_dir)
+    tokenizer = AutoTokenizer.from_pretrained("roberta-base", cache_dir=cache_dir)
 
     raw_datasets = load_dataset("glue", dataset, cache_dir=cache_dir)
     is_regression = raw_datasets["train"].features["label"].dtype in ["float32", "float64"]
@@ -74,7 +74,7 @@ def train(dataset: str="sst2", lr: float=0.00005, batch_size: int=8, epoch_num: 
                 'epoch': current_epoch,
                 'max_dev_metric': max_dev_metric}
 
-    model = RobertaForSC.from_pretrained("roberta-large", output_nlayers=output_nlayers, is_rewriter=is_rewriter, rewriter_nhead=nhead, rewriter_d_hid=d_hid, rewriter_dropout=dropout, rewriter_nlayers=nlayers, n_labels=num_labels)
+    model = RobertaForSC.from_pretrained("roberta-base", output_nlayers=output_nlayers, is_rewriter=is_rewriter, rewriter_nhead=nhead, rewriter_d_hid=d_hid, rewriter_dropout=dropout, rewriter_nlayers=nlayers, n_labels=num_labels)
     if os.path.exists(os.path.abspath(f'log/weight/weight-last-{save_name}.pt')):
         last_cp = torch.load(os.path.abspath(f'log/weight/weight-last-{save_name}.pt'))
         model.load_state_dict(last_cp['state_dict'])
