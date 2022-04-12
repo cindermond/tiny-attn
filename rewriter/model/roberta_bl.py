@@ -2,26 +2,36 @@ from transformers.models.roberta.modeling_roberta import RobertaPreTrainedModel,
 import torch
 from transformers.modeling_outputs import BaseModelOutput
 from torch import nn
-from rewriter.model.tiny_attn import TinyAttention_
+from rewriter.model.tiny_attn import TinyAttention_, TinyAttention
 
 
 class RobertaEncoderBL(nn.Module):
-    def __init__(self, config, input_embd=768, output_embd=768, attention_embd=64, attention_head=1, attention_dropout=0.1):
+    def __init__(self, config, input_embd=768, output_embd=768, attention_embd=64, attention_head=1, attention_dropout=0.1, is_old_fashion=False):
         super().__init__()
         self.config = config
         self.layer = nn.ModuleList([RobertaLayer(config) for _ in range(config.num_hidden_layers)])
-        self.attention_layer = nn.ModuleList([TinyAttention_(input_embd=input_embd, output_embd=output_embd, attention_embd=attention_embd, attention_head=attention_head, attention_dropout=attention_dropout) for _ in range(config.num_hidden_layers)])
-
+        self.is_old_fashion = is_old_fashion
+        if is_old_fashion:
+            self.attention_layer = nn.ModuleList([TinyAttention_(input_embd=input_embd, output_embd=output_embd, attention_embd=attention_embd, attention_head=attention_head, attention_dropout=attention_dropout) for _ in range(config.num_hidden_layers)])
+        else:
+            self.attention_layer = nn.ModuleList([TinyAttention(input_embd=input_embd, output_embd=output_embd, attention_embd=attention_embd, attention_head=attention_head, attention_dropout=attention_dropout) for _ in range(config.num_hidden_layers)])
     def forward(
         self,
         hidden_states,
+        old_attention_mask=None,
         attention_mask=None,
     ):
         for attention_module, layer_module in zip(self.attention_layer, self.layer):
             
-            hidden_states = attention_module(
-                hidden_states
-            )
+            if self.is_old_fashion:
+                hidden_states = attention_module(
+                    hidden_states
+                )
+            else:
+                hidden_states = hidden_states + attention_module(
+                    hidden_states,
+                    old_attention_mask
+                )
 
             layer_outputs = layer_module(
                 hidden_states,
@@ -98,6 +108,7 @@ class RobertaModelBL(RobertaPreTrainedModel):
             embedding_output = self.rewriter(embedding_output)
         encoder_outputs = self.encoder(
             embedding_output,
+            old_attention_mask = attention_mask,
             attention_mask=extended_attention_mask,
         )
         sequence_output = encoder_outputs[0]
