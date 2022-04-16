@@ -8,12 +8,12 @@ import torch
 class RobertaForSC(RobertaPreTrainedModel):
     _keys_to_ignore_on_load_missing = [r"position_ids"]
 
-    def __init__(self, config, output_nlayers, is_rewriter, rewriter_nhead, rewriter_d_hid, rewriter_dropout, rewriter_nlayers, n_labels):
+    def __init__(self, config, output_nlayers, is_rewriter, rewriter_nhead, rewriter_d_hid, rewriter_dropout, rewriter_nlayers, n_labels, attention_emd = 64, attention_head = 1, structure = 'seq'):
         super().__init__(config)
         self.num_labels = n_labels
         self.config = config
 
-        self.roberta = RobertaModelBL(config, is_rewriter=is_rewriter,rewriter_nhead=rewriter_nhead, rewriter_d_hid=rewriter_d_hid, rewriter_dropout=rewriter_dropout, rewriter_nlayers=rewriter_nlayers)
+        self.roberta = RobertaModelBL(config, is_rewriter=is_rewriter,rewriter_nhead=rewriter_nhead, rewriter_d_hid=rewriter_d_hid, rewriter_dropout=rewriter_dropout, rewriter_nlayers=rewriter_nlayers, attention_emd=attention_emd, attention_head=attention_head, structure=structure)
         self.classifier = RobertaSCHead(config, output_nlayers=output_nlayers, num_labels=n_labels)
 
         # Initialize weights and apply final processing

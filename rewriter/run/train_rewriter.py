@@ -87,8 +87,9 @@ def train(dataset: str="sst2", lr: float=0.00005, batch_size: int=8, epoch_num: 
 
     for p in model.roberta.embeddings.parameters():
         p.requires_grad = False
-    for p in model.roberta.encoder.layer.parameters():
-        p.requires_grad = False
+    for name, p in model.roberta.encoder.layer.named_parameters():
+        if 'tiny_attn' not in name:
+            p.requires_grad = False
 
     total_para = 0
     trainable_para = 0
@@ -125,6 +126,8 @@ def train(dataset: str="sst2", lr: float=0.00005, batch_size: int=8, epoch_num: 
     model.train()
     model.roberta.embeddings.eval()
     model.roberta.encoder.layer.eval()
+    for l in model.roberta.encoder.layer:
+        l.tiny_attn.train()
     total_loss = 0
     log_interval = 100
     eval_interval = math.floor(len(trainloader)/eval_times)
@@ -162,6 +165,8 @@ def train(dataset: str="sst2", lr: float=0.00005, batch_size: int=8, epoch_num: 
                 model.train()
                 model.roberta.embeddings.eval()
                 model.roberta.encoder.layer.eval()
+                for l in model.roberta.encoder.layer:
+                    l.tiny_attn.train()
 
         torch.save(make_cp(model, epoch) ,os.path.abspath(f'log/weight/weight-last-{save_name}.pt'))
         torch.save(make_cp(optimizer, epoch) ,os.path.abspath(f'log/weight/opt-last-{save_name}.pt'))
