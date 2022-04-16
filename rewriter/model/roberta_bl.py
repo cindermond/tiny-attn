@@ -121,7 +121,7 @@ class RobertaModelBL(RobertaPreTrainedModel):
         self.config = config
 
         self.embeddings = RobertaEmbeddings(config)
-        self.encoder = RobertaEncoderBL(config, input_embd=attention_emd, output_embd=attention_emd, attention_head=attention_head, structure=structure)
+        self.encoder = RobertaEncoderBL(config, input_embd = config.hidden_size, output_embd = config.hidden_size, attention_embd=attention_emd, attention_head=attention_head, structure=structure)
         self.first_dropout = torch.nn.Dropout(0.1)
         self.is_rewriter = is_rewriter
         if is_rewriter:
