@@ -26,7 +26,7 @@ task_to_keys = {
     "wnli": ("sentence1", "sentence2"),
 }
 
-def train(dataset: str="sst2", lr: float=0.00005, batch_size: int=8, epoch_num: int=20, nhead: int=4, d_hid: int=512, nlayers: int=1, dropout: float=0.1, is_shuffled: bool=True, is_rewriter: bool=True, output_nlayers: int=1, weight_decay: float=0, cache_dir: str='data', seed: int=1234, warmup_steps: int=0, load_name:str = "None", scheduler_type:str = "linear", eval_times:int = 1) -> None:
+def train(dataset: str="sst2", lr: float=0.00005, batch_size: int=8, epoch_num: int=20, nhead: int=4, d_hid: int=512, nlayers: int=1, dropout: float=0.1, is_rewriter: bool=True, output_nlayers: int=1, weight_decay: float=0, cache_dir: str='data', seed: int=1234, warmup_steps: int=0, load_name:str = "None", scheduler_type:str = "linear", eval_times:int = 1, model_name = 'roberta-base', attention_emd = 64, attention_head = 1, structure = 'seq') -> None:
     #reproducibility
     random.seed(seed)
     torch.manual_seed(seed)
@@ -34,10 +34,10 @@ def train(dataset: str="sst2", lr: float=0.00005, batch_size: int=8, epoch_num: 
 
     #initializes
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
-    save_name = f'base-dataset={dataset}-nlayers={nlayers}-d_hid={d_hid}-nhead={nhead}-lr={lr}-is_rewriter={is_rewriter}-output_nlayers={output_nlayers}-weight_decay={weight_decay}-seed={seed}-warmup_steps={warmup_steps}-epoch_num={epoch_num}-scheduler_type={scheduler_type}'
+    save_name = f'model_name={model_name}-dataset={dataset}-nlayers={nlayers}-d_hid={d_hid}-nhead={nhead}-lr={lr}-is_rewriter={is_rewriter}-output_nlayers={output_nlayers}-weight_decay={weight_decay}-seed={seed}-warmup_steps={warmup_steps}-epoch_num={epoch_num}-scheduler_type={scheduler_type}-attention_emd={attention_emd}-attention_head={attention_head}-structure={structure}'
     print(save_name)
     
-    tokenizer = AutoTokenizer.from_pretrained("roberta-base", cache_dir=cache_dir)
+    tokenizer = AutoTokenizer.from_pretrained(model_name, cache_dir=cache_dir)
 
     raw_datasets = load_dataset("glue", dataset, cache_dir=cache_dir)
     is_regression = raw_datasets["train"].features["label"].dtype in ["float32", "float64"]
@@ -47,7 +47,7 @@ def train(dataset: str="sst2", lr: float=0.00005, batch_size: int=8, epoch_num: 
         label_list = raw_datasets["train"].unique("label")
         label_list.sort()  # Let's sort it for determinism
         num_labels = len(label_list)
-    trainloader = torch.utils.data.DataLoader(raw_datasets['train'], batch_size=batch_size, shuffle=is_shuffled)
+    trainloader = torch.utils.data.DataLoader(raw_datasets['train'], batch_size=batch_size, shuffle=True)
     if dataset == "mnli":
         val_word = 'validation_matched'
     else:
@@ -74,7 +74,7 @@ def train(dataset: str="sst2", lr: float=0.00005, batch_size: int=8, epoch_num: 
                 'epoch': current_epoch,
                 'max_dev_metric': max_dev_metric}
 
-    model = RobertaForSC.from_pretrained("roberta-base", output_nlayers=output_nlayers, is_rewriter=is_rewriter, rewriter_nhead=nhead, rewriter_d_hid=d_hid, rewriter_dropout=dropout, rewriter_nlayers=nlayers, n_labels=num_labels)
+    model = RobertaForSC.from_pretrained(model_name, output_nlayers=output_nlayers, is_rewriter=is_rewriter, rewriter_nhead=nhead, rewriter_d_hid=d_hid, rewriter_dropout=dropout, rewriter_nlayers=nlayers, n_labels=num_labels, attention_emd=attention_emd, attention_head=attention_head, structure=structure)
     if os.path.exists(os.path.abspath(f'log/weight/weight-last-{save_name}.pt')):
         last_cp = torch.load(os.path.abspath(f'log/weight/weight-last-{save_name}.pt'))
         model.load_state_dict(last_cp['state_dict'])
@@ -89,6 +89,19 @@ def train(dataset: str="sst2", lr: float=0.00005, batch_size: int=8, epoch_num: 
         p.requires_grad = False
     for p in model.roberta.encoder.layer.parameters():
         p.requires_grad = False
+
+    total_para = 0
+    trainable_para = 0
+    for p in list(model.parameters()):
+        nn=1
+        for s in list(p.size()):
+            nn = nn*s
+        total_para += nn
+        if p.requires_grad:
+            trainable_para += nn
+
+    train_percent = trainable_para/total_para
+    print(f'trainable parameters: {train_percent}')
 
     model = model.to(device)
     optimizer = AdamW(filter(lambda p: p.requires_grad, model.parameters()),lr=lr,weight_decay=weight_decay)
