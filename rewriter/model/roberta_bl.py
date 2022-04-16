@@ -38,7 +38,7 @@ class RobertaLayerBL(nn.Module):
         outputs = self_attention_outputs[1:]  # add self attentions if we output attention weights
 
         if self.structure[0]=='m':
-            tiny_attn = self.tiny_attn(attention_output)
+            tiny_attn = self.tiny_attn(attention_output, old_attention_mask)
         if self.structure[1]=='0':
             attention_output = attention_output + tiny_attn
 
