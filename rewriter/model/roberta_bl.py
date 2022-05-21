@@ -15,6 +15,8 @@ class RobertaLayerBL(nn.Module):
         self.output = RobertaOutput(config)
         self.tiny_attn = TinyAttention(input_embd=input_embd, output_embd=output_embd, attention_embd=attention_embd, attention_head=attention_head, attention_dropout=attention_dropout)
         self.structure = structure
+        if structure == 'double_seq':
+            self.tiny_attn2 = TinyAttention(input_embd=input_embd, output_embd=output_embd, attention_embd=attention_embd, attention_head=attention_head, attention_dropout=attention_dropout)
 
     def forward(
         self,
@@ -26,6 +28,8 @@ class RobertaLayerBL(nn.Module):
     ):
         if self.structure[0]=='s':
             tiny_attn = self.tiny_attn(hidden_states, old_attention_mask)
+        if self.structure=="double_seq":
+            hidden_states = hidden_states + self.tiny_attn(hidden_states, old_attention_mask)
         # decoder uni-directional self-attention cached key/values tuple is at positions 1,2
         self_attention_outputs = self.attention(
             hidden_states,
@@ -41,6 +45,8 @@ class RobertaLayerBL(nn.Module):
             tiny_attn = self.tiny_attn(attention_output, old_attention_mask)
         if self.structure[1]=='0':
             attention_output = attention_output + tiny_attn
+        if self.structure == "double_seq":
+            attention_output = attention_output + self.tiny_attn2(attention_output, old_attention_mask)
 
         layer_output = apply_chunking_to_forward(
             self.feed_forward_chunk, self.chunk_size_feed_forward, self.seq_len_dim, attention_output
