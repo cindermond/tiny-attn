@@ -1,4 +1,4 @@
-from datasets import load_dataset, load_metric
+from datasets import load_dataset
 from transformers import AutoTokenizer
 from transformers.optimization import get_linear_schedule_with_warmup, get_constant_schedule_with_warmup,get_cosine_schedule_with_warmup
 import torch
@@ -10,16 +10,14 @@ import ast
 import random
 import math
 from torch.optim import AdamW
-
-from rewriter.model.RobertaForSC import RobertaForSC
-from rewriter.utils.oom import chunk_batch, search_num_chunks
+from rewriter.model.AlbertMLM import AlbertMLM
 
 task_to_keys = {
     "rte": ("premise", "hypothesis"),
     "cb": ("premise", "hypothesis"),
 }
 
-def train(dataset: str="sst2", lr: float=0.00005, batch_size: int=8, epoch_num: int=20, nhead: int=4, d_hid: int=512, nlayers: int=1, dropout: float=0.1, is_rewriter: bool=True, output_nlayers: int=1, weight_decay: float=0, cache_dir: str='data', seed: int=1234, warmup_steps: int=0, load_name:str = "None", scheduler_type:str = "linear", eval_times:int = 1, model_name = 'roberta-base', attention_emd = 64, attention_head = 1, structure = 'seq') -> None:
+def train(dataset: str="rte", lr: float=0.0005, epoch_num: int=10, weight_decay: float=0, cache_dir: str='data', seed: int=1234, warmup_steps: int=0, load_name:str = "None", scheduler_type:str = "linear", eval_times:int = 1, attention_emd = 1, attention_head = 1) -> None:
     #reproducibility
     random.seed(seed)
     torch.manual_seed(seed)
@@ -27,33 +25,26 @@ def train(dataset: str="sst2", lr: float=0.00005, batch_size: int=8, epoch_num: 
 
     #initializes
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
-    save_name = f'model_name={model_name}-dataset={dataset}-nlayers={nlayers}-d_hid={d_hid}-nhead={nhead}-lr={lr}-is_rewriter={is_rewriter}-output_nlayers={output_nlayers}-weight_decay={weight_decay}-seed={seed}-warmup_steps={warmup_steps}-epoch_num={epoch_num}-scheduler_type={scheduler_type}-attention_emd={attention_emd}-attention_head={attention_head}-structure={structure}'
+    save_name = f'dataset={dataset}-lr={lr}-weight_decay={weight_decay}-seed={seed}-warmup_steps={warmup_steps}-epoch_num={epoch_num}-scheduler_type={scheduler_type}-attention_emd={attention_emd}-attention_head={attention_head}'
     print(save_name)
     
-    tokenizer = AutoTokenizer.from_pretrained(model_name, cache_dir=cache_dir)
+    tokenizer = AutoTokenizer.from_pretrained("albert-xxlarge-v2", cache_dir=cache_dir)
 
     raw_datasets = load_dataset("juny116/few_glue", dataset, cache_dir=cache_dir)
-    is_regression = raw_datasets["train"].features["label"].dtype in ["float32", "float64"]
-    if is_regression:
-        num_labels = 1
-    else:
-        label_list = raw_datasets["train"].unique("label")
-        label_list.sort()  # Let's sort it for determinism
-        num_labels = len(label_list)
-    trainloader = torch.utils.data.DataLoader(raw_datasets['train'], batch_size=batch_size, shuffle=True)
-    devloader = torch.utils.data.DataLoader(raw_datasets['validation'], batch_size=batch_size, shuffle=False)
+    trainloader = raw_datasets['train']
+    devloader = raw_datasets['validation']
+    testloader = raw_datasets['test']
 
     sentence1_key, sentence2_key = task_to_keys[dataset]
-    def preprocess_fn(examples):
-        args = (
-            (examples[sentence1_key],) if sentence2_key is None else (examples[sentence1_key], examples[sentence2_key])
-        )
-        result = tokenizer(*args, padding=True, truncation='longest_first', max_length=(tokenizer.model_max_length), return_tensors='pt')
-        return result
+    def preprocess_fn(examples, label_word = None):
+        result = tokenizer(examples[sentence1_key]+"?[MASK]. "+ examples[sentence2_key], return_tensors='pt')
 
-    metric = load_metric("super_glue", dataset)
-    # You can define your custom compute_metrics function. It takes an `EvalPrediction` object (a namedtuple with a
-    # predictions and label_ids field) and has to return a dictionary string to float.
+        if label_word is not None:
+            label = tokenizer(examples[sentence1_key]+"?"+label_word+". "+ examples[sentence2_key], return_tensors='pt')["input_ids"]
+            label = torch.where(result["input_ids"] == tokenizer.mask_token_id, label, -100)
+        else:
+            label = None
+        return result, label
 
     start_epoch = 0
     max_dev_metric = -float('inf')
@@ -63,7 +54,7 @@ def train(dataset: str="sst2", lr: float=0.00005, batch_size: int=8, epoch_num: 
                 'epoch': current_epoch,
                 'max_dev_metric': max_dev_metric}
 
-    model = RobertaForSC.from_pretrained(model_name, output_nlayers=output_nlayers, is_rewriter=is_rewriter, rewriter_nhead=nhead, rewriter_d_hid=d_hid, rewriter_dropout=dropout, rewriter_nlayers=nlayers, n_labels=num_labels, attention_emd=attention_emd, attention_head=attention_head, structure=structure)
+    model = AlbertMLM.from_pretrained("albert-xxlarge-v2", attention_emb=attention_emd, attention_head=attention_head)
     if os.path.exists(os.path.abspath(f'log/weight/weight-last-{save_name}.pt')):
         last_cp = torch.load(os.path.abspath(f'log/weight/weight-last-{save_name}.pt'))
         model.load_state_dict(last_cp['state_dict'])
@@ -74,9 +65,9 @@ def train(dataset: str="sst2", lr: float=0.00005, batch_size: int=8, epoch_num: 
         model.load_state_dict(last_cp['state_dict'])
         max_dev_metric = last_cp['max_dev_metric']
 
-    for p in model.roberta.embeddings.parameters():
+    for p in model.albert.embeddings.parameters():
         p.requires_grad = False
-    for name, p in model.roberta.encoder.layer.named_parameters():
+    for name, p in model.albert.encoder.albert_layer_groups[0].albert_layers.named_parameters():
         if 'tiny_attn' not in name:
             p.requires_grad = False
 
@@ -98,9 +89,6 @@ def train(dataset: str="sst2", lr: float=0.00005, batch_size: int=8, epoch_num: 
     if os.path.exists(os.path.abspath(f'log/weight/opt-last-{save_name}.pt')):
         last_cp = torch.load(os.path.abspath(f'log/weight/opt-last-{save_name}.pt'))
         optimizer.load_state_dict(last_cp['state_dict'])
-    # chunk dataset for oom errors
-    num_chunks = search_num_chunks(model, preprocess_fn, trainloader.dataset, batch_size)
-    print('num chunks to chunk batches into is: ', num_chunks)
     if scheduler_type=="linear":
         scheduler = get_linear_schedule_with_warmup(optimizer,num_warmup_steps=warmup_steps,num_training_steps=len(trainloader)*epoch_num,last_epoch = start_epoch-1)
     elif scheduler_type=="constant":
@@ -113,26 +101,37 @@ def train(dataset: str="sst2", lr: float=0.00005, batch_size: int=8, epoch_num: 
 
     #training
     model.train()
-    model.roberta.embeddings.eval()
-    model.roberta.encoder.layer.eval()
-    if structure != 'seq':
-        for l in model.roberta.encoder.layer:
-            l.tiny_attn.train()
+    model.albert.embeddings.eval()
+    model.albert.encoder.albert_layer_groups[0].albert_layers.eval()
+    for l in model.albert.encoder.albert_layer_groups[0].albert_layers:
+        l.tiny_attn.train()
     total_loss = 0
     log_interval = 100
     eval_interval = math.floor(len(trainloader)/eval_times)
     for epoch in range(start_epoch, epoch_num):
+        trainloader.shuffle()
         for index, batch in enumerate(trainloader):
-            inputs = preprocess_fn(batch)
-            if batch['label'].dtype == torch.double: batch['label'] = batch['label'].float() # for stsb
-            inputs.update({'labels': batch['label']})
+            if dataset == "cb":
+                if batch['label'] == 0:
+                    label_word = " yes "
+                elif batch['label'] == 1:
+                    label_word = " no "
+                else:
+                    label_word = " maybe "
+            if dataset == "rte":
+                if batch['label'] == 0:
+                    label_word = " yes "
+                elif batch['label'] == 1:
+                    label_word = " instead "
+            inputs, label = preprocess_fn(batch, label_word)
+
+            inputs.update({'labels': label})
             inputs.to(device)
             optimizer.zero_grad()
 
-            for mbatch in chunk_batch(dict(inputs), num_chunks):
-                output = model(mbatch['input_ids'], mbatch['attention_mask'], labels=mbatch['labels'])
-                loss = output.loss / num_chunks
-                loss.backward()
+            output = model(inputs['input_ids'], inputs['attention_mask'], labels=inputs['labels'])
+            loss = output.loss
+            loss.backward()
 
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
             optimizer.step()
@@ -145,42 +144,63 @@ def train(dataset: str="sst2", lr: float=0.00005, batch_size: int=8, epoch_num: 
                 total_loss = 0
             
             if index % eval_interval == eval_interval - 1:
-                dev_metric, dev_metrics = eval(model, preprocess_fn, devloader, metric, dataset)
-                print(f'Epoch{epoch+1} dev_metrics: {dev_metrics}')
+                dev_metric = eval(model, preprocess_fn, devloader, dataset, tokenizer)
+                print(f'Epoch{epoch+1} dev_metric: {dev_metric}')
 
                 if dev_metric > max_dev_metric:
                     max_dev_metric = dev_metric
                     print(f'Epoch{epoch+1} max_dev_metric: {max_dev_metric}')
                     torch.save(make_cp(model, epoch), os.path.abspath(f'log/weight/weight-best-{save_name}.pt'))
                 model.train()
-                model.roberta.embeddings.eval()
-                model.roberta.encoder.layer.eval()
-                if structure != 'seq':
-                    for l in model.roberta.encoder.layer:
-                        l.tiny_attn.train()
-
+                model.albert.embeddings.eval()
+                model.albert.encoder.albert_layer_groups[0].albert_layers.eval()
+                for l in model.albert.encoder.albert_layer_groups[0].albert_layers:
+                    l.tiny_attn.train()
         torch.save(make_cp(model, epoch) ,os.path.abspath(f'log/weight/weight-last-{save_name}.pt'))
         torch.save(make_cp(optimizer, epoch) ,os.path.abspath(f'log/weight/opt-last-{save_name}.pt'))
+    test_metric_last = eval(model, preprocess_fn, testloader, dataset, tokenizer)
+    last_cp = torch.load(os.path.abspath(f'log/weight/weight-best-{save_name}.pt'))
+    model.load_state_dict(last_cp['state_dict'])
+    test_metric_best = eval(model, preprocess_fn, testloader, dataset, tokenizer)
+    print(f'test_metric_last: {test_metric_last}')
+    print(f'test_metric_best: {test_metric_best}')
+        
 
 
 @torch.no_grad()
-def eval(model: nn.Module, preprocess_fn, dataloader: torch.utils.data.DataLoader, metric, dataset) -> float:
+def eval(model: nn.Module, preprocess_fn, dataloader, dataset, tokenizer) -> float:
     #initialize
     model.eval()
     device = next(model.parameters()).device
+    correct_number = 0
+    total_number = 0
     for batch in dataloader:
-        inputs = preprocess_fn(batch)
-        if batch['label'].dtype == torch.double: batch['label'] = batch['label'].float() # for stsb
-        inputs.update({'labels': batch['label']})
+        inputs, _ = preprocess_fn(batch)
+        if dataset == "cb":
+            if batch['label'] == 0:
+                label_word = "yes"
+            elif batch['label'] == 1:
+                label_word = "no"
+            else:
+                label_word = "maybe"
+        if dataset == "rte":
+            if batch['label'] == 0:
+                label_word = "yes"
+            elif batch['label'] == 1:
+                label_word = "instead"
+        label_id = tokenizer.convert_tokens_to_ids(label_word)
         inputs.to(device)
-        output = model(inputs['input_ids'], inputs['attention_mask'], labels=inputs['labels'])
-        if dataset != "stsb":
-            _, pos = torch.max(output.logits, 1)
-        else:
-            pos = output.logits
-        metric.add_batch(predictions=pos, references=inputs['labels'])
-    result = metric.compute()
-    return list(result.values())[0], result
+        mask_token_index = (inputs['input_ids'] == tokenizer.mask_token_id)[0].nonzero(as_tuple=True)[0]
+        output = model(inputs['input_ids'], inputs['attention_mask']).logits[0, mask_token_index]
+        if dataset == "cb":
+            if output[0,label_id]>= output[0,tokenizer.convert_tokens_to_ids("yes")] and output[0,label_id]>= output[0,tokenizer.convert_tokens_to_ids("no")] and output[0,label_id]>= output[0,tokenizer.convert_tokens_to_ids("maybe")]:
+                correct_number += 1
+        if dataset == "rte":
+            if output[0,label_id]>= output[0,tokenizer.convert_tokens_to_ids("yes")] and output[0,label_id]>= output[0,tokenizer.convert_tokens_to_ids("instead")]:
+                correct_number += 1
+        total_number += 1
+
+    return correct_number/total_number
 
 if __name__=='__main__':
     if len(sys.argv) > 1:

@@ -9,7 +9,7 @@ from typing import List, Dict, Optional, Union, Tuple
 from rewriter.model.tiny_attn import TinyAttention
 
 class AlbertLayerBL(nn.Module):
-    def __init__(self, config: AlbertConfig):
+    def __init__(self, config: AlbertConfig, attention_emb = 1, attention_head = 1):
         super().__init__()
 
         self.config = config
@@ -21,6 +21,7 @@ class AlbertLayerBL(nn.Module):
         self.ffn_output = nn.Linear(config.intermediate_size, config.hidden_size)
         self.activation = ACT2FN[config.hidden_act]
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.tiny_attn = TinyAttention(config.hidden_size, config.hidden_size, attention_emb, attention_emb)
 
     def forward(
         self,
@@ -32,13 +33,15 @@ class AlbertLayerBL(nn.Module):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         attention_output = self.attention(hidden_states, attention_mask, head_mask, output_attentions)
 
+        temp = attention_output[0] + self.tiny_attn(attention_output[0])
+
         ffn_output = apply_chunking_to_forward(
             self.ff_chunk,
             self.chunk_size_feed_forward,
             self.seq_len_dim,
-            attention_output[0],
+            temp,
         )
-        hidden_states = self.full_layer_layer_norm(ffn_output + attention_output[0])
+        hidden_states = self.full_layer_layer_norm(ffn_output + temp)
 
         return (hidden_states,) + attention_output[1:]  # add attentions if we output them
 
@@ -49,10 +52,10 @@ class AlbertLayerBL(nn.Module):
         return ffn_output
 
 class AlbertLayerGroupBL(nn.Module):
-    def __init__(self, config: AlbertConfig):
+    def __init__(self, config: AlbertConfig,attention_emb = 1, attention_head = 1):
         super().__init__()
 
-        self.albert_layers = nn.ModuleList([AlbertLayerBL(config) for _ in range(config.inner_group_num)])
+        self.albert_layers = nn.ModuleList([AlbertLayerBL(config, attention_emb=attention_emb, attention_head=attention_head) for _ in range(config.inner_group_num)])
 
     def forward(
         self,
@@ -83,12 +86,12 @@ class AlbertLayerGroupBL(nn.Module):
         return outputs  # last-layer hidden state, (layer hidden states), (layer attentions)
 
 class AlbertTransformerBL(nn.Module):
-    def __init__(self, config: AlbertConfig):
+    def __init__(self, config: AlbertConfig,attention_emb = 1, attention_head = 1):
         super().__init__()
 
         self.config = config
         self.embedding_hidden_mapping_in = nn.Linear(config.embedding_size, config.hidden_size)
-        self.albert_layer_groups = nn.ModuleList([AlbertLayerGroupBL(config) for _ in range(config.num_hidden_groups)])
+        self.albert_layer_groups = nn.ModuleList([AlbertLayerGroupBL(config, attention_emb=attention_emb, attention_head=attention_head) for _ in range(config.num_hidden_groups)])
 
     def forward(
         self,
@@ -140,12 +143,12 @@ class AlbertModelBL(AlbertPreTrainedModel):
     config_class = AlbertConfig
     base_model_prefix = "albert"
 
-    def __init__(self, config: AlbertConfig, add_pooling_layer: bool = True):
+    def __init__(self, config: AlbertConfig, add_pooling_layer: bool = True, attention_emb = 1, attention_head = 1):
         super().__init__(config)
 
         self.config = config
         self.embeddings = AlbertEmbeddings(config)
-        self.encoder = AlbertTransformerBL(config)
+        self.encoder = AlbertTransformerBL(config, attention_emb=attention_emb, attention_head=attention_head)
         if add_pooling_layer:
             self.pooler = nn.Linear(config.hidden_size, config.hidden_size)
             self.pooler_activation = nn.Tanh()

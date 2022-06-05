@@ -10,10 +10,10 @@ class AlbertMLM(AlbertPreTrainedModel):
 
     _keys_to_ignore_on_load_unexpected = [r"pooler"]
 
-    def __init__(self, config):
+    def __init__(self, config, attention_emb = 1, attention_head = 1):
         super().__init__(config)
 
-        self.albert = AlbertModelBL(config, add_pooling_layer=False)
+        self.albert = AlbertModelBL(config, add_pooling_layer=False, attention_emb = attention_emb, attention_head = attention_head)
         self.predictions = AlbertMLMHead(config)
 
         # Initialize weights and apply final processing

@@ -33,11 +33,14 @@ class TinyAttention(nn.Module):
             for p in self.linear2.parameters():
                 p *= 0.01
 
-    def forward(self, hidden_states, attention_mask):
+    def forward(self, hidden_states, attention_mask = None):
         new_hs = self.norm(hidden_states)
         new_hs = self.linear1(new_hs)
         q,k,v = torch.split(new_hs,self.attention_embd, dim=2)
-        new_hs = self.attention(q,k,v, key_padding_mask=torch.logical_not(attention_mask))[0]
+        if attention_mask is None:
+            new_hs = self.attention(q,k,v)[0]
+        else:
+            new_hs = self.attention(q,k,v, key_padding_mask=torch.logical_not(attention_mask))[0]
         new_hs = self.linear2(new_hs)
         return new_hs
 

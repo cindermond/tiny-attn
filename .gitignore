@@ -11,3 +11,5 @@
 /best_from_logs.py
 __pycache__/
 *.pyc
+/*.tsv
+/*.zip
