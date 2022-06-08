@@ -22,7 +22,7 @@ class TinyAttention_(nn.Module):
         return hidden_states + 0.01*new_hs
 
 class TinyAttention(nn.Module):
-    def __init__(self, input_embd=1024, output_embd=1024, attention_embd=64, attention_head=1, attention_dropout=0.1) -> None:
+    def __init__(self, input_embd=1024, output_embd=1024, attention_embd=1, attention_head=1, attention_dropout=0.1) -> None:
         super().__init__()
         self.attention_embd = attention_embd
         self.linear1 = nn.Linear(input_embd, attention_embd * 3)
