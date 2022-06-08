@@ -10,6 +10,7 @@ import ast
 import random
 import math
 from torch.optim import AdamW
+from yaml import load
 from rewriter.model.AlbertMLM import AlbertMLM
 
 task_to_keys = {
@@ -122,7 +123,7 @@ def train(dataset: str="rte", lr: float=0.0005, epoch_num: int=10, weight_decay:
                 if batch['label'] == 0:
                     label_word = " yes "
                 elif batch['label'] == 1:
-                    label_word = " instead "
+                    label_word = " no "
             inputs, label = preprocess_fn(batch, label_word)
 
             inputs.update({'labels': label})
@@ -150,20 +151,14 @@ def train(dataset: str="rte", lr: float=0.0005, epoch_num: int=10, weight_decay:
                 if dev_metric > max_dev_metric:
                     max_dev_metric = dev_metric
                     print(f'Epoch{epoch+1} max_dev_metric: {max_dev_metric}')
-                    torch.save(make_cp(model, epoch), os.path.abspath(f'log/weight/weight-best-{save_name}.pt'))
                 model.train()
                 model.albert.embeddings.eval()
                 model.albert.encoder.albert_layer_groups[0].albert_layers.eval()
                 for l in model.albert.encoder.albert_layer_groups[0].albert_layers:
                     l.tiny_attn.train()
-        torch.save(make_cp(model, epoch) ,os.path.abspath(f'log/weight/weight-last-{save_name}.pt'))
-        torch.save(make_cp(optimizer, epoch) ,os.path.abspath(f'log/weight/opt-last-{save_name}.pt'))
+
     test_metric_last = eval(model, preprocess_fn, testloader, dataset, tokenizer)
-    last_cp = torch.load(os.path.abspath(f'log/weight/weight-best-{save_name}.pt'))
-    model.load_state_dict(last_cp['state_dict'])
-    test_metric_best = eval(model, preprocess_fn, testloader, dataset, tokenizer)
     print(f'test_metric_last: {test_metric_last}')
-    print(f'test_metric_best: {test_metric_best}')
         
 
 
@@ -187,7 +182,7 @@ def eval(model: nn.Module, preprocess_fn, dataloader, dataset, tokenizer) -> flo
             if batch['label'] == 0:
                 label_word = "yes"
             elif batch['label'] == 1:
-                label_word = "instead"
+                label_word = "no"
         label_id = tokenizer.convert_tokens_to_ids(label_word)
         inputs.to(device)
         mask_token_index = (inputs['input_ids'] == tokenizer.mask_token_id)[0].nonzero(as_tuple=True)[0]
@@ -196,7 +191,7 @@ def eval(model: nn.Module, preprocess_fn, dataloader, dataset, tokenizer) -> flo
             if output[0,label_id]>= output[0,tokenizer.convert_tokens_to_ids("yes")] and output[0,label_id]>= output[0,tokenizer.convert_tokens_to_ids("no")] and output[0,label_id]>= output[0,tokenizer.convert_tokens_to_ids("maybe")]:
                 correct_number += 1
         if dataset == "rte":
-            if output[0,label_id]>= output[0,tokenizer.convert_tokens_to_ids("yes")] and output[0,label_id]>= output[0,tokenizer.convert_tokens_to_ids("instead")]:
+            if output[0,label_id]>= output[0,tokenizer.convert_tokens_to_ids("yes")] and output[0,label_id]>= output[0,tokenizer.convert_tokens_to_ids("no")]:
                 correct_number += 1
         total_number += 1
 
