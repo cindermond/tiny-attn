@@ -10,8 +10,10 @@ import ast
 import random
 import math
 from torch.optim import AdamW
+from torch.nn.parameter import Parameter
 
 from rewriter.model.RobertaForSCAda import RobertaForSCAda
+from rewriter.model.RobertaForSC import RobertaForSC
 from rewriter.utils.oom import chunk_batch, search_num_chunks
 
 task_to_keys = {
@@ -26,7 +28,7 @@ task_to_keys = {
     "wnli": ("sentence1", "sentence2"),
 }
 
-def train(dataset: str="sst2", lr: float=0.00005, batch_size: int=8, epoch_num: int=20, nhead: int=4, d_hid: int=512, nlayers: int=1, dropout: float=0.1, is_rewriter: bool=False, output_nlayers: int=0, weight_decay: float=0, cache_dir: str='data', seed: int=1234, warmup_steps: int=0, load_name:str = "None", scheduler_type:str = "linear", eval_times:int = 1, model_name = 'roberta-large', attention_emd = 1, attention_head = 1) -> None:
+def train(dataset: str="sst2", lr: float=0.00005, batch_size: int=8, epoch_num: int=20, nhead: int=4, d_hid: int=512, nlayers: int=1, dropout: float=0.1, is_rewriter: bool=False, output_nlayers: int=0, weight_decay: float=0, cache_dir: str='data', seed: int=1234, warmup_steps: int=0, load_name:str = "weight-best-model_name=roberta-large-dataset=sst2-nlayers=1-d_hid=512-nhead=4-lr=0.0008-is_rewriter=False-output_nlayers=0-weight_decay=0.01-seed=42-warmup_steps=4000-epoch_num=20-scheduler_type=cosine-attention_emd=1-attention_head=1-structure=m0", scheduler_type:str = "linear", eval_times:int = 1, model_name = 'roberta-large', attention_emd = 1, attention_head = 1) -> None:
     #reproducibility
     random.seed(seed)
     torch.manual_seed(seed)
@@ -75,6 +77,7 @@ def train(dataset: str="sst2", lr: float=0.00005, batch_size: int=8, epoch_num: 
                 'max_dev_metric': max_dev_metric}
 
     model = RobertaForSCAda.from_pretrained(model_name, output_nlayers=output_nlayers, is_rewriter=is_rewriter, rewriter_nhead=nhead, rewriter_d_hid=d_hid, rewriter_dropout=dropout, rewriter_nlayers=nlayers, n_labels=num_labels, attention_emd=attention_emd, attention_head=attention_head)
+
     if os.path.exists(os.path.abspath(f'log/weight/weight-last-{save_name}.pt')):
         last_cp = torch.load(os.path.abspath(f'log/weight/weight-last-{save_name}.pt'))
         model.load_state_dict(last_cp['state_dict'])
@@ -82,8 +85,18 @@ def train(dataset: str="sst2", lr: float=0.00005, batch_size: int=8, epoch_num: 
         max_dev_metric = last_cp['max_dev_metric']
     elif load_name != "None":
         last_cp = torch.load(os.path.abspath(f'log/result/{load_name}.pt'))
-        model.load_state_dict(last_cp['state_dict'])
-        max_dev_metric = last_cp['max_dev_metric']
+        model_temp = RobertaForSC.from_pretrained(model_name, output_nlayers=output_nlayers, is_rewriter=is_rewriter, rewriter_nhead=nhead, rewriter_d_hid=d_hid, rewriter_dropout=dropout, rewriter_nlayers=nlayers, n_labels=num_labels, attention_emd=attention_emd, attention_head=attention_head, structure = "m0")
+        model_temp.load_state_dict(last_cp['state_dict'])
+        for l,ref in zip(model.roberta.encoder.layer, model_temp.roberta.encoder.layer):
+            for t in l.tiny_attn:
+                t.linear1.weight = Parameter(ref.tiny_attn.linear1.weight + torch.randn_like(ref.tiny_attn.linear1.weight) * 0.01)
+                t.linear1.bias = Parameter(ref.tiny_attn.linear1.bias + torch.randn_like(ref.tiny_attn.linear1.bias) * 0.01)
+                t.linear2.weight = Parameter(ref.tiny_attn.linear2.weight + torch.randn_like(ref.tiny_attn.linear2.weight) * 0.01)
+                t.linear2.bias = Parameter(ref.tiny_attn.linear2.bias + torch.randn_like(ref.tiny_attn.linear2.bias) * 0.01)
+                t.attention.in_proj_weight = Parameter(ref.tiny_attn.attention.in_proj_weight + torch.randn_like(ref.tiny_attn.attention.in_proj_weight) * 0.01)
+                t.attention.in_proj_bias = Parameter(ref.tiny_attn.attention.in_proj_bias + torch.randn_like(ref.tiny_attn.attention.in_proj_bias) * 0.01)
+                t.attention.out_proj.weight = Parameter(ref.tiny_attn.attention.out_proj.weight + torch.randn_like(ref.tiny_attn.attention.out_proj.weight) * 0.01)
+                t.attention.out_proj.bias = Parameter(ref.tiny_attn.attention.out_proj.bias + torch.randn_like(ref.tiny_attn.attention.out_proj.bias) * 0.01)               
 
     for p in model.roberta.embeddings.parameters():
         p.requires_grad = False
