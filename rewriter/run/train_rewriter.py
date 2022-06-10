@@ -26,7 +26,7 @@ task_to_keys = {
     "wnli": ("sentence1", "sentence2"),
 }
 
-def train(dataset: str="sst2", lr: float=0.00005, batch_size: int=8, epoch_num: int=20, nhead: int=4, d_hid: int=512, nlayers: int=1, dropout: float=0.1, is_rewriter: bool=True, output_nlayers: int=1, weight_decay: float=0, cache_dir: str='data', seed: int=1234, warmup_steps: int=0, load_name:str = "None", scheduler_type:str = "linear", eval_times:int = 1, model_name = 'roberta-base', attention_emd = 64, attention_head = 1, structure = 'seq') -> None:
+def train(dataset: str="stsb", lr: float=0.00005, batch_size: int=8, epoch_num: int=20, nhead: int=4, d_hid: int=512, nlayers: int=1, dropout: float=0.1, is_rewriter: bool=False, output_nlayers: int=0, weight_decay: float=0, cache_dir: str='data', seed: int=1234, warmup_steps: int=0, load_name:str = "weight-best-model_name=roberta-large-dataset=stsb-nlayers=1-d_hid=512-nhead=4-lr=0.0015-is_rewriter=False-output_nlayers=0-weight_decay=0-seed=42-warmup_steps=0-epoch_num=20-scheduler_type=cosine-attention_emd=1-attention_head=1-structure=m0", scheduler_type:str = "linear", eval_times:int = 1, model_name = 'roberta-large', attention_emd = 1, attention_head = 1, structure = 'm0') -> None:
     #reproducibility
     random.seed(seed)
     torch.manual_seed(seed)
@@ -105,6 +105,7 @@ def train(dataset: str="sst2", lr: float=0.00005, batch_size: int=8, epoch_num: 
     print(f'trainable parameters: {train_percent}')
 
     model = model.to(device)
+
     optimizer = AdamW(filter(lambda p: p.requires_grad, model.parameters()),lr=lr,weight_decay=weight_decay)
     if os.path.exists(os.path.abspath(f'log/weight/opt-last-{save_name}.pt')):
         last_cp = torch.load(os.path.abspath(f'log/weight/opt-last-{save_name}.pt'))
@@ -189,6 +190,8 @@ def eval(model: nn.Module, preprocess_fn, dataloader: torch.utils.data.DataLoade
             _, pos = torch.max(output.logits, 1)
         else:
             pos = output.logits
+            pos = torch.where(pos<0,torch.Tensor([0.0]).to(device),pos)
+            pos = torch.where(pos>5,torch.Tensor([5.0]).to(device),pos)
         metric.add_batch(predictions=pos, references=inputs['labels'])
     result = metric.compute()
     return list(result.values())[0], result

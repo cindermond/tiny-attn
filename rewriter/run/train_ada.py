@@ -28,7 +28,7 @@ task_to_keys = {
     "wnli": ("sentence1", "sentence2"),
 }
 
-def train(dataset: str="sst2", lr: float=0.00005, batch_size: int=8, epoch_num: int=20, nhead: int=4, d_hid: int=512, nlayers: int=1, dropout: float=0.1, is_rewriter: bool=False, output_nlayers: int=0, weight_decay: float=0, cache_dir: str='data', seed: int=1234, warmup_steps: int=0, load_name:str = "weight-best-model_name=roberta-large-dataset=sst2-nlayers=1-d_hid=512-nhead=4-lr=0.0008-is_rewriter=False-output_nlayers=0-weight_decay=0.01-seed=42-warmup_steps=4000-epoch_num=20-scheduler_type=cosine-attention_emd=1-attention_head=1-structure=m0", scheduler_type:str = "linear", eval_times:int = 1, model_name = 'roberta-large', attention_emd = 1, attention_head = 1) -> None:
+def train(dataset: str="cola", lr: float=0.00005, batch_size: int=8, epoch_num: int=20, nhead: int=4, d_hid: int=512, nlayers: int=1, dropout: float=0.1, is_rewriter: bool=False, output_nlayers: int=0, weight_decay: float=0, cache_dir: str='data', seed: int=1234, warmup_steps: int=0, load_name:str = "weight-best-model_name=roberta-large-dataset=cola-nlayers=1-d_hid=512-nhead=4-lr=0.0005-is_rewriter=False-output_nlayers=0-weight_decay=0.04-seed=42-warmup_steps=0-epoch_num=20-scheduler_type=linear-attention_emd=1-attention_head=1-structure=m0", scheduler_type:str = "linear", eval_times:int = 1, model_name = 'roberta-large', attention_emd = 1, attention_head = 1, is_average_weight = False) -> None:
     #reproducibility
     random.seed(seed)
     torch.manual_seed(seed)
@@ -77,6 +77,11 @@ def train(dataset: str="sst2", lr: float=0.00005, batch_size: int=8, epoch_num: 
                 'max_dev_metric': max_dev_metric}
 
     model = RobertaForSCAda.from_pretrained(model_name, output_nlayers=output_nlayers, is_rewriter=is_rewriter, rewriter_nhead=nhead, rewriter_d_hid=d_hid, rewriter_dropout=dropout, rewriter_nlayers=nlayers, n_labels=num_labels, attention_emd=attention_emd, attention_head=attention_head)
+    model_temp = RobertaForSC.from_pretrained(model_name, output_nlayers=output_nlayers, is_rewriter=is_rewriter, rewriter_nhead=nhead, rewriter_d_hid=d_hid, rewriter_dropout=dropout, rewriter_nlayers=nlayers, n_labels=num_labels, attention_emd=attention_emd, attention_head=attention_head, structure = "m0")
+
+    if load_name != "None":
+        last_cp = torch.load(os.path.abspath(f'log/result/{load_name}.pt'))
+        model_temp.load_state_dict(last_cp['state_dict'])
 
     if os.path.exists(os.path.abspath(f'log/weight/weight-last-{save_name}.pt')):
         last_cp = torch.load(os.path.abspath(f'log/weight/weight-last-{save_name}.pt'))
@@ -84,20 +89,16 @@ def train(dataset: str="sst2", lr: float=0.00005, batch_size: int=8, epoch_num: 
         start_epoch = last_cp['epoch'] + 1
         max_dev_metric = last_cp['max_dev_metric']
     elif load_name != "None":
-        last_cp = torch.load(os.path.abspath(f'log/result/{load_name}.pt'))
-        model_temp = RobertaForSC.from_pretrained(model_name, output_nlayers=output_nlayers, is_rewriter=is_rewriter, rewriter_nhead=nhead, rewriter_d_hid=d_hid, rewriter_dropout=dropout, rewriter_nlayers=nlayers, n_labels=num_labels, attention_emd=attention_emd, attention_head=attention_head, structure = "m0")
-        model_temp.load_state_dict(last_cp['state_dict'])
         for l,ref in zip(model.roberta.encoder.layer, model_temp.roberta.encoder.layer):
             for t in l.tiny_attn:
-                t.linear1.weight = Parameter(ref.tiny_attn.linear1.weight + torch.randn_like(ref.tiny_attn.linear1.weight) * 0.01)
-                t.linear1.bias = Parameter(ref.tiny_attn.linear1.bias + torch.randn_like(ref.tiny_attn.linear1.bias) * 0.01)
-                t.linear2.weight = Parameter(ref.tiny_attn.linear2.weight + torch.randn_like(ref.tiny_attn.linear2.weight) * 0.01)
-                t.linear2.bias = Parameter(ref.tiny_attn.linear2.bias + torch.randn_like(ref.tiny_attn.linear2.bias) * 0.01)
-                t.attention.in_proj_weight = Parameter(ref.tiny_attn.attention.in_proj_weight + torch.randn_like(ref.tiny_attn.attention.in_proj_weight) * 0.01)
-                t.attention.in_proj_bias = Parameter(ref.tiny_attn.attention.in_proj_bias + torch.randn_like(ref.tiny_attn.attention.in_proj_bias) * 0.01)
-                t.attention.out_proj.weight = Parameter(ref.tiny_attn.attention.out_proj.weight + torch.randn_like(ref.tiny_attn.attention.out_proj.weight) * 0.01)
-                t.attention.out_proj.bias = Parameter(ref.tiny_attn.attention.out_proj.bias + torch.randn_like(ref.tiny_attn.attention.out_proj.bias) * 0.01)               
-
+                t.linear1.weight = Parameter(ref.tiny_attn.linear1.weight + torch.randn_like(ref.tiny_attn.linear1.weight) * 0.000001)
+                t.linear1.bias = Parameter(ref.tiny_attn.linear1.bias + torch.randn_like(ref.tiny_attn.linear1.bias) * 0.000001)
+                t.linear2.weight = Parameter(ref.tiny_attn.linear2.weight + torch.randn_like(ref.tiny_attn.linear2.weight) * 0.0000)
+                t.linear2.bias = Parameter(ref.tiny_attn.linear2.bias + torch.randn_like(ref.tiny_attn.linear2.bias) * 0.0000)
+                t.attention.in_proj_weight = Parameter(ref.tiny_attn.attention.in_proj_weight + torch.randn_like(ref.tiny_attn.attention.in_proj_weight) * 0.0000)
+                t.attention.in_proj_bias = Parameter(ref.tiny_attn.attention.in_proj_bias + torch.randn_like(ref.tiny_attn.attention.in_proj_bias) * 0.0000)
+                t.attention.out_proj.weight = Parameter(ref.tiny_attn.attention.out_proj.weight + torch.randn_like(ref.tiny_attn.attention.out_proj.weight) * 0.0000)
+                t.attention.out_proj.bias = Parameter(ref.tiny_attn.attention.out_proj.bias + torch.randn_like(ref.tiny_attn.attention.out_proj.bias) * 0.0000)   
     for p in model.roberta.embeddings.parameters():
         p.requires_grad = False
     for name, p in model.roberta.encoder.layer.named_parameters():
@@ -169,7 +170,24 @@ def train(dataset: str="sst2", lr: float=0.00005, batch_size: int=8, epoch_num: 
                 total_loss = 0
             
             if index % eval_interval == eval_interval - 1:
-                dev_metric, dev_metrics = eval(model, preprocess_fn, devloader, metric, dataset)
+                if is_average_weight:
+                    with torch.no_grad():
+                        model.to('cpu')
+                        for l,ref in zip(model.roberta.encoder.layer, model_temp.roberta.encoder.layer):
+                            ref.tiny_attn.linear1.weight = Parameter((l.tiny_attn[0].linear1.weight+l.tiny_attn[1].linear1.weight+l.tiny_attn[2].linear1.weight+l.tiny_attn[3].linear1.weight)/4)
+                            ref.tiny_attn.linear1.bias =Parameter((l.tiny_attn[0].linear1.bias+l.tiny_attn[1].linear1.bias+l.tiny_attn[2].linear1.bias+l.tiny_attn[3].linear1.bias)/4)
+                            ref.tiny_attn.linear2.weight =Parameter((l.tiny_attn[0].linear2.weight+l.tiny_attn[1].linear2.weight+l.tiny_attn[2].linear2.weight+l.tiny_attn[3].linear2.weight)/4)
+                            ref.tiny_attn.linear2.bias =Parameter((l.tiny_attn[0].linear2.bias+l.tiny_attn[1].linear2.bias+l.tiny_attn[2].linear2.bias+l.tiny_attn[3].linear2.bias)/4)
+                            ref.tiny_attn.attention.in_proj_weight =Parameter((l.tiny_attn[0].attention.in_proj_weight+l.tiny_attn[1].attention.in_proj_weight+l.tiny_attn[2].attention.in_proj_weight+l.tiny_attn[3].attention.in_proj_weight)/4)
+                            ref.tiny_attn.attention.in_proj_bias =Parameter((l.tiny_attn[0].attention.in_proj_bias+l.tiny_attn[1].attention.in_proj_bias+l.tiny_attn[2].attention.in_proj_bias+l.tiny_attn[3].attention.in_proj_bias)/4)
+                            ref.tiny_attn.attention.out_proj.weight =Parameter((l.tiny_attn[0].attention.out_proj.weight+l.tiny_attn[1].attention.out_proj.weight+l.tiny_attn[2].attention.out_proj.weight+l.tiny_attn[3].attention.out_proj.weight)/4)
+                            ref.tiny_attn.attention.out_proj.bias =Parameter((l.tiny_attn[0].attention.out_proj.bias+l.tiny_attn[1].attention.out_proj.bias+l.tiny_attn[2].attention.out_proj.bias+l.tiny_attn[3].attention.out_proj.bias)/4)
+                    model_temp.to(device)
+                    dev_metric, dev_metrics = eval(model_temp, preprocess_fn, devloader, metric, dataset)
+                    model_temp.to("cpu")
+                    model.to(device)
+                else:
+                    dev_metric, dev_metrics = eval(model, preprocess_fn, devloader, metric, dataset)
                 print(f'Epoch{epoch+1} dev_metrics: {dev_metrics}')
 
                 if dev_metric > max_dev_metric:
