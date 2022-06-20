@@ -28,7 +28,7 @@ task_to_keys = {
     "wnli": ("sentence1", "sentence2"),
 }
 
-def train(dataset: str="cola", lr: float=0.00005, batch_size: int=8, epoch_num: int=20, nhead: int=4, d_hid: int=512, nlayers: int=1, dropout: float=0.1, is_rewriter: bool=False, output_nlayers: int=0, weight_decay: float=0, cache_dir: str='data', seed: int=1234, warmup_steps: int=0, load_name:str = "weight-best-model_name=roberta-large-dataset=cola-nlayers=1-d_hid=512-nhead=4-lr=0.0005-is_rewriter=False-output_nlayers=0-weight_decay=0.04-seed=42-warmup_steps=0-epoch_num=20-scheduler_type=linear-attention_emd=1-attention_head=1-structure=m0", scheduler_type:str = "linear", eval_times:int = 1, model_name = 'roberta-large', attention_emd = 1, attention_head = 1, is_average_weight = False) -> None:
+def train(dataset: str="cola", lr: float=0.00005, batch_size: int=8, epoch_num: int=20, nhead: int=4, d_hid: int=512, nlayers: int=1, dropout: float=0.1, is_rewriter: bool=False, output_nlayers: int=0, weight_decay: float=0, cache_dir: str='data', seed: int=1234, warmup_steps: int=0, load_name:str = "weight-best-model_name=roberta-large-dataset=cola-nlayers=1-d_hid=512-nhead=4-lr=0.0005-is_rewriter=False-output_nlayers=0-weight_decay=0.04-seed=42-warmup_steps=0-epoch_num=20-scheduler_type=linear-attention_emd=1-attention_head=1-structure=m0", scheduler_type:str = "linear", eval_times:int = 1, model_name = 'roberta-large', attention_emd = 1, attention_head = 1, is_average_weight = True) -> None:
     #reproducibility
     random.seed(seed)
     torch.manual_seed(seed)
