@@ -15,7 +15,7 @@ from rewriter.utils.bleu import BLEUScore
 import json
 
 
-def train(lr: float=0.00005, batch_size: int=4, epoch_num: int=20, weight_decay: float=0.01, cache_dir: str='data', seed: int=1234, warmup_steps: int=1000, load_name:str = "None", scheduler_type:str = "linear", eval_times:int = 2, attn_emb=1, attn_head=1, attn_dropout=0.1, is_sequential=True) -> None:
+def train(lr: float=0.00005, batch_size: int=4, epoch_num: int=20, weight_decay: float=0.01, cache_dir: str='data', seed: int=1234, warmup_steps: int=1000, load_name:str = "None", scheduler_type:str = "linear", eval_times:int = 1, attn_emb=1, attn_head=1, attn_dropout=0.1, is_sequential=True) -> None:
     #reproducibility
     random.seed(seed)
     torch.manual_seed(seed)
@@ -63,6 +63,19 @@ def train(lr: float=0.00005, batch_size: int=4, epoch_num: int=20, weight_decay:
     for name, p in model.named_parameters():
         if 'tiny_attn' not in name:
             p.requires_grad = False
+
+    total_para = 0
+    trainable_para = 0
+    for p in list(model.parameters()):
+        nn=1
+        for s in list(p.size()):
+            nn = nn*s
+        total_para += nn
+        if p.requires_grad:
+            trainable_para += nn
+
+    train_percent = trainable_para/total_para
+    print(f'trainable parameters: {train_percent}')
 
     model = model.to(device)
     model.eval()
