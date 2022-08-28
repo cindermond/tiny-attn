@@ -85,8 +85,14 @@ class GPT2TinyAttention(nn.Module):
             
 
     def forward(self, hidden_states, past_key_values = None, attention_mask = None):
+        if attention_mask is not None and hidden_states.size(dim=1)>1:
+            sp_attention_mask = attention_mask.expand(-1, -1, attention_mask.size(dim=3),-1)
+        else:
+            sp_attention_mask = attention_mask
+
+
         new_hs = self.norm(hidden_states)
         new_hs = self.linear1(new_hs)
-        new_hs, past_key_value = self.attention(new_hs, past_key_value = past_key_values, attention_mask=attention_mask)
+        new_hs, _, past_key_value = self.attention(new_hs, past_key_value = past_key_values, attention_mask=sp_attention_mask)
         new_hs = self.linear2(new_hs)
         return (new_hs, past_key_value)

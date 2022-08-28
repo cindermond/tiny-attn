@@ -15,7 +15,7 @@ from rewriter.utils.bleu import BLEUScore
 import json
 
 
-def train(lr: float=0.00005, batch_size: int=4, epoch_num: int=10, weight_decay: float=0.01, cache_dir: str='data', seed: int=1234, warmup_steps: int=5000, load_name:str = "None", scheduler_type:str = "linear", eval_times:int = 2, attn_emb=1, attn_head=1, attn_dropout=0.1, is_sequential=True) -> None:
+def train(lr: float=0.00005, batch_size: int=4, epoch_num: int=20, weight_decay: float=0.01, cache_dir: str='data', seed: int=1234, warmup_steps: int=1000, load_name:str = "None", scheduler_type:str = "linear", eval_times:int = 2, attn_emb=1, attn_head=1, attn_dropout=0.1, is_sequential=True) -> None:
     #reproducibility
     random.seed(seed)
     torch.manual_seed(seed)
@@ -28,6 +28,7 @@ def train(lr: float=0.00005, batch_size: int=4, epoch_num: int=10, weight_decay:
     print(save_name)
     
     tokenizer = AutoTokenizer.from_pretrained("gpt2-medium", cache_dir=cache_dir)
+    tokenizer.pad_token = tokenizer.eos_token
 
     with open(os.path.abspath('data/e2e/train.jsonl'),'r') as f:
         trainset = [json.loads(x) for x in f]
@@ -74,21 +75,21 @@ def train(lr: float=0.00005, batch_size: int=4, epoch_num: int=10, weight_decay:
         optimizer.load_state_dict(last_cp['state_dict'])
 
     if scheduler_type=="linear":
-        scheduler = get_linear_schedule_with_warmup(optimizer,num_warmup_steps=warmup_steps,num_training_steps=len(trainset)*epoch_num,last_epoch = len(trainset)*(start_epoch-1))
+        scheduler = get_linear_schedule_with_warmup(optimizer,num_warmup_steps=warmup_steps,num_training_steps=len(trainset)*epoch_num,last_epoch = max(len(trainset)*(start_epoch-1),-1))
     elif scheduler_type=="constant":
-        scheduler = get_constant_schedule_with_warmup(optimizer,num_warmup_steps=warmup_steps,last_epoch = len(trainset)*(start_epoch-1))
+        scheduler = get_constant_schedule_with_warmup(optimizer,num_warmup_steps=warmup_steps,last_epoch = max(len(trainset)*(start_epoch-1),-1))
     elif scheduler_type=="cosine":
-        scheduler = get_cosine_schedule_with_warmup(optimizer,num_warmup_steps=warmup_steps,num_training_steps=len(trainset)*epoch_num,last_epoch =len(trainset)*(start_epoch-1))
+        scheduler = get_cosine_schedule_with_warmup(optimizer,num_warmup_steps=warmup_steps,num_training_steps=len(trainset)*epoch_num,last_epoch = max(len(trainset)*(start_epoch-1),-1))
 
 
     #training
     total_loss = 0
-    log_interval = 1000
-    eval_interval = math.floor(len(trainset)/eval_times)
+    log_interval = 100
 
     for epoch in range(start_epoch, epoch_num):
         random.shuffle(trainset)
         batched_trainset = [trainset[i:i+batch_size] for i in range(0,len(trainset),batch_size)]
+        eval_interval = math.floor(len(batched_trainset)/eval_times)
         for index, batch in enumerate(batched_trainset):
             input_seq = [data['mr'] + "<|endoftext|>" + data['ref'] + "<|endoftext|>" for data in batch]
             gt_length = [data['gt_length'] for data in batch]
@@ -100,7 +101,7 @@ def train(lr: float=0.00005, batch_size: int=4, epoch_num: int=10, weight_decay:
                 labels[i,:l] = -100
             optimizer.zero_grad()
 
-            output = model(input_ids, attention_mask, labels=labels)
+            output = model(input_ids, attention_mask=attention_mask, labels=labels)
             loss = output.loss/len(batch)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
@@ -110,12 +111,12 @@ def train(lr: float=0.00005, batch_size: int=4, epoch_num: int=10, weight_decay:
 
             if index % log_interval == log_interval - 1:
                 cur_loss = total_loss/log_interval
-                print(f'Epoch:{epoch+1}/{epoch_num} Progress:{index+1}/{len(trainset)} Loss:{cur_loss}')
+                print(f'Epoch:{epoch+1}/{epoch_num} Progress:{index+1}/{len(batched_trainset)} Loss:{cur_loss}')
                 total_loss = 0
             
             if index % eval_interval == eval_interval - 1:
-                dev_metric, dev_metrics = eval(model, devset, tokenizer)
-                print(f'Epoch{epoch+1} dev_metrics: {dev_metrics}')
+                dev_metric = eval(model, devset, tokenizer)
+                print(f'Epoch{epoch+1} dev_metric: {dev_metric}')
 
                 if dev_metric > max_dev_metric:
                     max_dev_metric = dev_metric
@@ -126,6 +127,10 @@ def train(lr: float=0.00005, batch_size: int=4, epoch_num: int=10, weight_decay:
 
         torch.save(make_cp(model, epoch) ,os.path.abspath(f'log/weight/weight-last-{save_name}.pt'))
         torch.save(make_cp(optimizer, epoch) ,os.path.abspath(f'log/weight/opt-last-{save_name}.pt'))
+    
+    best_cp = torch.load(os.path.abspath(f'log/weight/weight-best-{save_name}.pt'))
+    model.load_state_dict(best_cp['state_dict'])
+    print(f'Test set metric: {eval(model, testset, tokenizer)}')
 
     
 @torch.no_grad()
@@ -139,7 +144,7 @@ def eval(model: nn.Module, evalset, tokenizer) -> float:
     for data in evalset[1:]:
         if len(data["mr"])>0:
             input_ids = tokenizer(temp_data+"<endoftext>", return_tensors="pt")["input_ids"].to(device)            
-            generated_result = model.generate(input_ids, max_new_token=100, min_length=input_ids.size(dim=1)+5, num_beams=5,eos_token_id=50256)[0][input_ids.size(dim=1):]
+            generated_result = model.generate(input_ids, max_new_tokens=100, min_length=input_ids.size(dim=1)+5, num_beams=5,eos_token_id=50256,pad_token_id=50256)[0][input_ids.size(dim=1):]
             generated_seq = tokenizer.decode(generated_result, skip_special_tokens=True).strip()
             metric.append(generated_seq, temp_label)
             temp_label = [data["ref"]]
@@ -148,7 +153,7 @@ def eval(model: nn.Module, evalset, tokenizer) -> float:
             temp_label.append(data["ref"])
 
     input_ids = tokenizer(temp_data+"<endoftext>", return_tensors="pt")["input_ids"].to(device)            
-    generated_result = model.generate(input_ids, max_new_token=100, min_length=input_ids.size(dim=1)+5, num_beams=5,eos_token_id=50256)[0][input_ids.size(dim=1):]
+    generated_result = model.generate(input_ids, max_new_tokens=100, min_length=input_ids.size(dim=1)+5, num_beams=5,eos_token_id=50256,pad_token_id=50256)[0][input_ids.size(dim=1):]
     generated_seq = tokenizer.decode(generated_result, skip_special_tokens=True).strip()
     metric.append(generated_seq, temp_label)
 

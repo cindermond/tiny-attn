@@ -14,7 +14,7 @@ class GPT2BlockBL(nn.Module):
 
         self.ln_1 = nn.LayerNorm(hidden_size, eps=config.layer_norm_epsilon)
         self.attn = GPT2Attention(config, layer_idx=layer_idx)
-        self.tiny_attn = GPT2TinyAttention(config, attention_embd=attention_emb, attention_head=attention_head, attention_dropout=attention_dropout, input_embd=hidden_size, output_embd=hidden_size)
+        self.tiny_attn = GPT2TinyAttention(attention_embd=attention_emb, attention_head=attention_head, attention_dropout=attention_dropout, input_embd=hidden_size, output_embd=hidden_size)
 
         self.ln_2 = nn.LayerNorm(hidden_size, eps=config.layer_norm_epsilon)
 
@@ -52,7 +52,6 @@ class GPT2BlockBL(nn.Module):
             output_attentions=output_attentions,
         )
         attn_output = attn_outputs[0]  # output_attn: a, present, (attentions)
-        outputs = attn_outputs[1:]
         # residual connection
         hidden_states = attn_output + residual
 
@@ -60,7 +59,7 @@ class GPT2BlockBL(nn.Module):
             attn_output, tiny_past_key_values = self.tiny_attn(hidden_states, tiny_layer_past, attention_mask)
             hidden_states = hidden_states + attn_output
 
-        outputs[0] = (outputs[0], tiny_past_key_values)
+        outputs = ((attn_outputs[1], tiny_past_key_values),) + attn_outputs[2:]
 
         residual = hidden_states
         hidden_states = self.ln_2(hidden_states)
@@ -156,9 +155,9 @@ class GPT2ModelBL(GPT2PreTrainedModel):
 
         if past_key_values is None:
             past_length = 0
-            past_key_values = tuple([None] * len(self.h))
+            past_key_values = tuple([(None, None)] * len(self.h))
         else:
-            past_length = past_key_values[0][0].size(-2)
+            past_length = past_key_values[0][0][0].size(-2)
         if position_ids is None:
             position_ids = torch.arange(past_length, input_shape[-1] + past_length, dtype=torch.long, device=device)
             position_ids = position_ids.unsqueeze(0).view(-1, input_shape[-1])
@@ -434,6 +433,9 @@ class GPT2LMHeadModelBL(GPT2PreTrainedModel):
         beam_idx at every generation step.
         """
         return tuple(
-            tuple(past_state.index_select(0, beam_idx.to(past_state.device)) for past_state in layer_past)
+            tuple(
+                tuple(past_state.index_select(0, beam_idx.to(past_state.device)) for past_state in past_item)
+                for past_item in layer_past
+            )
             for layer_past in past
         )
