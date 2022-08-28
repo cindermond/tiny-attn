@@ -23,7 +23,7 @@ def train(lr: float=0.01, batch_size: int=1, epoch_num: int=100, weight_decay: f
 
     #initializes
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
-    save_name = f'lr={lr}-weight_decay={weight_decay}-seed={seed}-warmup_steps={warmup_steps}-epoch_num={epoch_num}-scheduler_type={scheduler_type}-attn_emb={attn_emb}-attn_head={attn_head}-attn_dropout={attn_dropout}-is_seq={is_sequential}'
+    save_name = f'lr={lr}-weight_decay={weight_decay}-seed={seed}-warmup_steps={warmup_steps}-epoch_num={epoch_num}-scheduler_type={scheduler_type}-attn_emb={attn_emb}-attn_head={attn_head}-attn_dropout={attn_dropout}-is_seq={is_sequential}-eval_times={eval_times}'
     print(save_name)
     
     tokenizer = AutoTokenizer.from_pretrained("gpt2-medium", cache_dir=cache_dir)
