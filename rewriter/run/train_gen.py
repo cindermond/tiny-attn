@@ -15,7 +15,7 @@ from rewriter.utils.bleu import BLEUScore
 import json
 
 
-def train(lr: float=0.00005, batch_size: int=4, epoch_num: int=20, weight_decay: float=0.01, cache_dir: str='data', seed: int=1234, warmup_steps: int=1000, load_name:str = "None", scheduler_type:str = "linear", eval_times:int = 1, attn_emb=1, attn_head=1, attn_dropout=0.1, is_sequential=True) -> None:
+def train(lr: float=0.01, batch_size: int=1, epoch_num: int=100, weight_decay: float=0.0, cache_dir: str='data', seed: int=1234, warmup_steps: int=0, load_name:str = "None", scheduler_type:str = "linear", eval_times:int = 1, attn_emb=1, attn_head=1, attn_dropout=0.1, is_sequential=True) -> None:
     #reproducibility
     random.seed(seed)
     torch.manual_seed(seed)
@@ -38,7 +38,7 @@ def train(lr: float=0.00005, batch_size: int=4, epoch_num: int=20, weight_decay:
         testset = [json.loads(x) for x in f]
     
     for data in trainset:
-        data["gt_length"] = len(tokenizer(data["mr"]+"<endoftext>")["input_ids"])
+        data["gt_length"] = len(tokenizer(data["mr"]+"<|endoftext|>")["input_ids"])
 
     start_epoch = 0
     max_dev_metric = -float('inf')
