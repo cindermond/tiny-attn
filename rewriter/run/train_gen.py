@@ -14,7 +14,7 @@ from rewriter.utils.bleu import BLEUScore
 import json
 
 
-def train(lr: float=0.01, batch_size: int=1, epoch_num: int=100, weight_decay: float=0.0, cache_dir: str='data', seed: int=1234, warmup_steps: int=0, load_name:str = "None", scheduler_type:str = "linear", eval_times:int = 1, attn_emb=1, attn_head=1, attn_dropout=0.1, is_sequential=True) -> None:
+def train(lr: float=0.01, batch_size: int=1, epoch_num: int=100, weight_decay: float=0.0, cache_dir: str='data', seed: int=1234, warmup_steps: int=0, load_name:str = "None", scheduler_type:str = "linear", eval_times:int = 1, attn_emb=1, attn_head=1, attn_dropout=0.1, is_sequential=False) -> None:
     #reproducibility
     random.seed(seed)
     torch.manual_seed(seed)
@@ -114,7 +114,7 @@ def train(lr: float=0.01, batch_size: int=1, epoch_num: int=100, weight_decay: f
             optimizer.zero_grad()
 
             output = model(input_ids, attention_mask=attention_mask, labels=labels)
-            loss = output.loss/len(batch)
+            loss = output.loss
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
             optimizer.step()
