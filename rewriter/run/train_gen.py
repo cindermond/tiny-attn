@@ -8,7 +8,6 @@ import sys
 import ast
 import random
 import math
-import nltk
 from torch.optim import AdamW
 from rewriter.model.gpt_gen import GPT2LMHeadModelBL
 from rewriter.utils.bleu import BLEUScore
