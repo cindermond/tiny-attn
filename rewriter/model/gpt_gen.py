@@ -14,7 +14,7 @@ class GPT2BlockBL(nn.Module):
 
         self.ln_1 = nn.LayerNorm(hidden_size, eps=config.layer_norm_epsilon)
         self.attn = GPT2Attention(config, layer_idx=layer_idx)
-        self.tiny_attn = GPT2TinyAttention(config, attention_embd=attention_emb, attention_head=attention_head, attention_dropout=attention_dropout)
+        self.tiny_attn = GPT2TinyAttention(config, attention_embd=attention_emb, attention_head=attention_head, attention_dropout=attention_dropout, input_embd=hidden_size, output_embd=hidden_size)
 
         self.ln_2 = nn.LayerNorm(hidden_size, eps=config.layer_norm_epsilon)
 
