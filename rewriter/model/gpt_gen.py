@@ -41,7 +41,8 @@ class GPT2BlockBL(nn.Module):
         if self.is_sequential:
             residual = hidden_states
         else:
-            residual, tiny_past_key_values = self.tiny_attn(hidden_states, tiny_layer_past, attention_mask)
+            tiny_attn_output, tiny_past_key_values = self.tiny_attn(hidden_states, tiny_layer_past, attention_mask)
+            residual = hidden_states + tiny_attn_output
         hidden_states = self.ln_1(hidden_states)
         attn_outputs = self.attn(
             hidden_states,
