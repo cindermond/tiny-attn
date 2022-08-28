@@ -95,10 +95,10 @@ def train(lr: float=0.01, batch_size: int=1, epoch_num: int=100, weight_decay: f
 
 
     #training
-    total_loss = 0
     log_interval = 100
 
     for epoch in range(start_epoch, epoch_num):
+        total_loss = 0
         random.shuffle(trainset)
         batched_trainset = [trainset[i:i+batch_size] for i in range(0,len(trainset),batch_size)]
         eval_interval = math.floor(len(batched_trainset)/eval_times)
