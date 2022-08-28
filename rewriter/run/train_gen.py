@@ -157,7 +157,7 @@ def eval(model: nn.Module, evalset, tokenizer) -> float:
     for data in evalset[1:]:
         if len(data["mr"])>0:
             input_ids = tokenizer(temp_data+"<|endoftext|>", return_tensors="pt")["input_ids"].to(device)            
-            generated_result = model.generate(input_ids, max_new_tokens=100, min_length=input_ids.size(dim=1)+5, num_beams=5,eos_token_id=50256,pad_token_id=50256)[0][input_ids.size(dim=1):]
+            generated_result = model.generate(input_ids, max_new_tokens=100, min_length=input_ids.size(dim=1)+10, num_beams=5,eos_token_id=50256,pad_token_id=50256)[0][input_ids.size(dim=1):]
             generated_seq = tokenizer.decode(generated_result, skip_special_tokens=True).strip()
             metric.append(generated_seq, temp_label)
             temp_label = [data["ref"]]
@@ -166,7 +166,7 @@ def eval(model: nn.Module, evalset, tokenizer) -> float:
             temp_label.append(data["ref"])
 
     input_ids = tokenizer(temp_data+"<|endoftext|>", return_tensors="pt")["input_ids"].to(device)            
-    generated_result = model.generate(input_ids, max_new_tokens=100, min_length=input_ids.size(dim=1)+5, num_beams=5,eos_token_id=50256,pad_token_id=50256)[0][input_ids.size(dim=1):]
+    generated_result = model.generate(input_ids, max_new_tokens=100, min_length=input_ids.size(dim=1)+10, num_beams=5,eos_token_id=50256,pad_token_id=50256)[0][input_ids.size(dim=1):]
     generated_seq = tokenizer.decode(generated_result, skip_special_tokens=True).strip()
     metric.append(generated_seq, temp_label)
 
