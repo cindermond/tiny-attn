@@ -13,3 +13,5 @@ __pycache__/
 *.pyc
 /*.tsv
 /*.zip
+/temp_file
+/temp_save

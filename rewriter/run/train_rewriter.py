@@ -114,11 +114,11 @@ def train(dataset: str="stsb", lr: float=0.00005, batch_size: int=8, epoch_num: 
     num_chunks = search_num_chunks(model, preprocess_fn, trainloader.dataset, batch_size)
     print('num chunks to chunk batches into is: ', num_chunks)
     if scheduler_type=="linear":
-        scheduler = get_linear_schedule_with_warmup(optimizer,num_warmup_steps=warmup_steps,num_training_steps=len(trainloader)*epoch_num,last_epoch = start_epoch-1)
+        scheduler = get_linear_schedule_with_warmup(optimizer,num_warmup_steps=warmup_steps,num_training_steps=len(trainloader)*epoch_num,last_epoch = max(len(trainloader)*(start_epoch-1),-1))
     elif scheduler_type=="constant":
-        scheduler = get_constant_schedule_with_warmup(optimizer,num_warmup_steps=warmup_steps,last_epoch = start_epoch-1)
+        scheduler = get_constant_schedule_with_warmup(optimizer,num_warmup_steps=warmup_steps,last_epoch = max(len(trainloader)*(start_epoch-1),-1))
     elif scheduler_type=="cosine":
-        scheduler = get_cosine_schedule_with_warmup(optimizer,num_warmup_steps=warmup_steps,num_training_steps=len(trainloader)*epoch_num,last_epoch = start_epoch-1)
+        scheduler = get_cosine_schedule_with_warmup(optimizer,num_warmup_steps=warmup_steps,num_training_steps=len(trainloader)*epoch_num,last_epoch = max(len(trainloader)*(start_epoch-1),-1))
 
 
 
