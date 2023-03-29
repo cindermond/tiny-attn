@@ -1,0 +1,1 @@
+python -u rewriter/run/train_rewriter.py "{\"dataset\": \"sst2\", \"lr\": 0.0008, \"batch_size\": 16, \"is_rewriter\": False, \"output_nlayers\": 0, \"weight_decay\": 0.01, \"seed\": 42,\"warmup_steps\": 4000,\"epoch_num\":20, \"load_name\":\"None\",\"scheduler_type\":\"cosine\",\"eval_times\":2, \"model_name\":\"roberta-large\",\"structure\":\"m0\"}"
