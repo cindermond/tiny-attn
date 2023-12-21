@@ -7,7 +7,7 @@ setup(
     description='rewriter',
     packages=setuptools.find_packages(),
     install_requires=[
-        'transformers==4.19.2',
+        'transformers==4.36.0',
         'datasets',
         'scipy',
         'sklearn',
